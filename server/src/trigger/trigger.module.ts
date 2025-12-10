@@ -13,9 +13,10 @@ import { MongoService } from 'src/database/mongo.service'
 import { BundleService } from 'src/application/bundle.service'
 import { FunctionRecycleBinService } from 'src/recycle-bin/cloud-function/function-recycle-bin.service'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
+import { LocalClusterModule } from 'src/local-cluster/local-cluster.module'
 
 @Module({
-  imports: [StorageModule, HttpModule],
+  imports: [StorageModule, HttpModule, LocalClusterModule],
   controllers: [TriggerController],
   providers: [
     TriggerService,
