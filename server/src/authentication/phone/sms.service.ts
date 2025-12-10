@@ -1,10 +1,6 @@
 import { AuthenticationService } from '../authentication.service'
 import { Injectable, Logger } from '@nestjs/common'
-import Dysmsapi, * as dysmsapi from '@alicloud/dysmsapi20170525'
-import * as OpenApi from '@alicloud/openapi-client'
-import * as Util from '@alicloud/tea-util'
 import {
-  ALISMS_KEY,
   LIMIT_CODE_PER_IP_PER_DAY,
   MILLISECONDS_PER_DAY,
   MILLISECONDS_PER_MINUTE,
@@ -31,15 +27,10 @@ export class SmsService {
    */
   async sendPhoneCode(phone: string, code: string) {
     try {
-      this.logger.debug(`send sms code: ${code} to ${phone}`)
-
-      const res = await this.sendAlismsCode(phone, code.toString())
-      if (res.body.code !== 'OK') {
-        return `ALISMS_ERROR: ${res.body.message}`
-      }
+      this.logger.debug(`[MOCK] send sms code: ${code} to ${phone}`)
       return null
     } catch (error) {
-      this.logger.error(error, error.response?.body)
+      this.logger.error(error)
       return error.message
     }
   }
@@ -131,34 +122,5 @@ export class SmsService {
         { phone, type, state: SmsVerifyCodeState.Unused },
         { $set: { state: SmsVerifyCodeState.Used } },
       )
-  }
-
-  // send sms code to phone using alisms
-  private async sendAlismsCode(phone: string, code: string) {
-    const { accessKeyId, accessKeySecret, templateCode, signName, endpoint } =
-      await this.loadAlismsConfig()
-
-    const sendSmsRequest = new dysmsapi.SendSmsRequest({
-      phoneNumbers: phone,
-      signName,
-      templateCode,
-      templateParam: `{"code":${code}}`,
-    })
-
-    const config = new OpenApi.Config({
-      accessKeyId,
-      accessKeySecret,
-      endpoint,
-    })
-
-    const client = new Dysmsapi(config)
-    const runtime = new Util.RuntimeOptions({})
-    return await client.sendSmsWithOptions(sendSmsRequest, runtime)
-  }
-
-  // load alisms config from database
-  private async loadAlismsConfig() {
-    const phoneProvider = await this.authService.getPhoneProvider()
-    return phoneProvider.config[ALISMS_KEY]
   }
 }

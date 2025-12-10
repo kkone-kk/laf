@@ -10,9 +10,10 @@ import { RuntimeGatewayService } from './ingress/runtime-ingress.service'
 import { BucketGatewayService } from './ingress/bucket-ingress.service'
 import { WebsiteHostingGatewayService } from './ingress/website-ingress.service'
 import { DatabaseModule } from 'src/database/database.module'
+import { LocalClusterModule } from 'src/local-cluster/local-cluster.module'
 
 @Module({
-  imports: [HttpModule, DatabaseModule],
+  imports: [HttpModule, DatabaseModule, LocalClusterModule],
   providers: [
     RuntimeDomainService,
     BucketDomainService,

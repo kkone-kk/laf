@@ -485,8 +485,9 @@ export class ApplicationController {
         ))
 
     if (!isEqual(doc.autoscaling, origin.autoscaling)) {
-      const { hpa, app } = await this.instance.get(appid)
-      await this.instance.reapplyHorizontalPodAutoscaler(app, hpa)
+      // Mock reapply hpa
+      // const { hpa, app } = await this.instance.get(appid)
+      // await this.instance.reapplyHorizontalPodAutoscaler(app, hpa)
     }
 
     if (isDedicatedDatabaseChanged) {
