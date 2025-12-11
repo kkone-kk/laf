@@ -24,13 +24,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@alicloud/dysmsapi20170525": "^2.0.22",
-    "@alicloud/openapi-client": "^0.4.1",
-    "@alicloud/tea-util": "^1.4.5",
     "@aws-sdk/client-s3": "^3.458.0",
     "@aws-sdk/client-sts": "^3.458.0",
     "@aws-sdk/s3-request-presigner": "^3.458.0",
-    "@kubernetes/client-node": "^0.17.1",
     "@nestjs/axios": "^1.0.0",
     "@nestjs/common": "^9.0.0",
     "@nestjs/config": "^2.2.0",
@@ -66,7 +62,6 @@
     "nodemailer": "^6.9.4",
     "npm-package-arg": "^10.1.0",
     "passport-jwt": "^4.0.0",
-    "prometheus-query": "^3.3.2",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0",
     "sharp": "^0.32.2",
