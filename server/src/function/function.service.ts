@@ -350,20 +350,6 @@ export class FunctionService {
     return token
   }
 
-  /**
-   * Get the in-cluster url of runtime
-   * @param appid
-   * @returns
-   */
-  getInClusterRuntimeUrl(region: Region, appid: string) {
-    const serviceName = appid
-    const namespace = GetApplicationNamespace(region, appid)
-    const appAddress = `${serviceName}.${namespace}:8000`
-
-    const url = `http://${appAddress}`
-    return url
-  }
-
   async getLogs(
     appid: string,
     params: {
