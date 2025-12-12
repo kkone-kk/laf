@@ -92,6 +92,13 @@ export class FunctionController {
     if (!res) {
       return ResponseUtil.error(i18n.t('function.create.error'))
     }
+
+    // New function created (Running by default now). Ensure process is started.
+    const conf = await this.appConfigService.findOne(appid)
+    const envs = conf.environments || []
+    const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+    await this.processManager.startProcess(appid, envObj)
+
     return ResponseUtil.ok(res)
   }
 
@@ -189,18 +196,13 @@ export class FunctionController {
       )
     }
 
-    // Handle State Change: Start/Stop
-    if (dto.state) {
-      if (dto.state === CloudFunctionState.Running) {
-        // When starting a function, ensure the runtime process is running
-        const conf = await this.appConfigService.findOne(appid)
-        const envs = conf.environments || []
-        const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
-        // Inject shared dependencies? Handled by ProcessManager via CWD
-        await this.processManager.startProcess(appid, envObj)
-      }
-      // If stopping, we don't necessarily stop the process unless all functions are stopped.
-      // But for now, we just update the DB state. The runtime should pick up the change via ChangeStream.
+    // Handle State Change: Start/Stop or Code Update (Publish)
+    if (dto.state === CloudFunctionState.Running || dto.code) {
+      // When starting a function or updating code (which forces Running), ensure the runtime process is running
+      const conf = await this.appConfigService.findOne(appid)
+      const envs = conf.environments || []
+      const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+      await this.processManager.startProcess(appid, envObj)
     }
 
     const res = await this.functionsService.updateOne(func, dto)

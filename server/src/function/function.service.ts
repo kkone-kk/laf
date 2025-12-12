@@ -55,7 +55,7 @@ export class FunctionService {
       createdBy: userid,
       methods: dto.methods,
       tags: dto.tags || [],
-      state: CloudFunctionState.Stopped,
+      state: CloudFunctionState.Running, // Default to Running on creation
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -63,8 +63,6 @@ export class FunctionService {
     const fn = await this.findOne(appid, dto.name)
 
     await this.addOneHistoryRecord(fn, 'created')
-    // Don't publish on create automatically if we want manual start control?
-    // But usually we publish so it exists in the 'published' collection.
     await this.publish(fn)
     return fn
   }
@@ -153,21 +151,32 @@ export class FunctionService {
       }
     }
 
+    const updateQuery: any = {
+      $set: {
+        desc: dto.description,
+        methods: dto.methods,
+        tags: dto.tags || [],
+        updatedAt: new Date(),
+      },
+    }
+
+    if (dto.code) {
+      updateQuery.$set.source = {
+        code: dto.code,
+        compiled: compileTs2js(dto.code, func.name),
+        version: func.source.version + 1,
+      }
+      // If updating code, ensure it is set to Running
+      updateQuery.$set.state = CloudFunctionState.Running
+    }
+
+    if (dto.state) {
+      updateQuery.$set.state = dto.state
+    }
+
     await this.db.collection<CloudFunction>('CloudFunction').updateOne(
       { appid: func.appid, name: func.name },
-      {
-        $set: {
-          source: {
-            code: dto.code,
-            compiled: compileTs2js(dto.code, func.name),
-            version: func.source.version + 1,
-          },
-          desc: dto.description,
-          methods: dto.methods,
-          tags: dto.tags || [],
-          updatedAt: new Date(),
-        },
-      },
+      updateQuery,
     )
 
     const fn = await this.findOne(func.appid, func.name)
@@ -330,24 +339,36 @@ export class FunctionService {
    * @returns
    */
   async getInClusterRuntimeUrl(region: Region, appid: string) {
-    // In local mode with shared runtime, we need to get the actual port from ProcessManager
-    // or return a proxy URL that local gateway handles.
-    // If local gateway is used, it might route by Host header?
-    // But ProcessManager allocates random ports.
-
     // Check if the process is running and get its port
     const port = this.processManager.getPort(appid)
     if (port) {
       return `http://localhost:${port}`
     }
 
-    // Fallback or error if not running
-    // If not running, we might need to start it, but this is a getter.
-    // Return a dummy port or throw?
-    // Let's assume Local Gateway handles mapping 8080 -> appid port if we are using it.
-    // But here we need internal URL.
+    // Try to start it (lazy loading)
+    // We need envs. This logic is duplicated from other places, ideally should be centralized.
+    // For now, if port is missing, we try to start it if we can access DB, otherwise we fail.
+    // However, this method is usually called in contexts where we might not want to await a start.
+    // But returning a dead URL is worse.
 
-    return `http://localhost:${port || 8000}`
+    // Attempt to start process via ProcessRecoveryService logic or similar?
+    // Accessing AppConfigService here might be circular or complex dependency-wise if not careful.
+    // But let's try to inject AppConfigService if we can, or just query DB directly since we have 'db'.
+
+    try {
+       const conf = await this.db.collection<ApplicationConfiguration>('ApplicationConfiguration').findOne({ appid })
+       if (conf) {
+          const envs = conf.environments || []
+          const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+          const { port: newPort } = await this.processManager.startProcess(appid, envObj)
+          return `http://localhost:${newPort}`
+       }
+    } catch (e) {
+      this.logger.error(`Failed to lazy-start process for ${appid}`, e)
+    }
+
+    // If all else fails
+    throw new Error(`Runtime process for ${appid} is not running and could not be started.`)
   }
 
   async getLogs(
