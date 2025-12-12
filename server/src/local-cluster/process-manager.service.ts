@@ -1,10 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
 import * as child_process from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
 
 @Injectable()
-export class ProcessManagerService {
+export class ProcessManagerService implements OnModuleDestroy {
   private readonly logger = new Logger(ProcessManagerService.name)
   private processes: Map<string, child_process.ChildProcess> = new Map()
   private appPorts: Map<string, number> = new Map()
@@ -78,5 +78,14 @@ export class ProcessManagerService {
 
   getPort(appid: string) {
       return this.appPorts.get(appid)
+  }
+
+  onModuleDestroy() {
+    this.logger.log('ProcessManagerService destroying, killing all child processes...')
+    for (const [appid, child] of this.processes) {
+      this.logger.log(`Killing process for ${appid} (pid: ${child.pid})`)
+      child.kill()
+    }
+    this.processes.clear()
   }
 }

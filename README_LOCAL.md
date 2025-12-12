@@ -51,9 +51,25 @@ chmod +x start-local.sh
 This script will:
 1. Install dependencies for the server.
 2. Build the server.
-3. Start the NestJS server in development mode.
+3. Start the NestJS server in development mode on port 3000.
 
-### 3. Accessing Functions
+### 3. Start the Web Frontend
+
+Open a new terminal to start the frontend.
+
+```bash
+cd web
+npm install
+# Point to your local server
+export VITE_DEV_SERVER_URL=http://localhost:3000
+npm run dev
+```
+
+Visit `http://localhost:5273` (or the port shown by vite).
+
+**Login**: Authentication is mocked. You can enter any username/password (e.g., admin/admin), and it will log you in as a default admin user.
+
+### 4. Accessing Functions
 
 The system includes a **Local Gateway** running on port **8080**.
 
@@ -72,7 +88,13 @@ Ensure your DNS resolves `*.127.0.0.1.nip.io` to `127.0.0.1` (this is standard b
 - **CronJobService**: Uses `node-cron` to schedule tasks locally.
 - **Database**: Uses a single local MongoDB instance. Each application gets its own logical database derived from the main `DATABASE_URL`.
 
-## Notes
+## Notes for Production
 
-- **Logs**: Function logs are currently output to the server's stdout/console.
-- **Security**: This mode is intended for local development and testing. Process isolation is minimal compared to containers.
+**WARNING**: This mode is designed for **local development** or **private single-tenant** use. It removes significant security and reliability layers provided by Kubernetes:
+
+1.  **Isolation**: User functions run as child processes of the server user. There is **NO** container isolation. Malicious code can access the server's file system and environment.
+2.  **Authentication**: Authentication is **DISABLED/MOCKED**. Anyone with network access to the API can act as admin.
+3.  **Reliability**: There is no automatic restart on crash (beyond basic Node logic), no resource limits (CPU/RAM), and no horizontal scaling.
+4.  **Logging**: Logs are printed to stdout and are not persisted or rotated.
+
+If you intend to use this in a "production" environment, ensure it is strictly internal, trusted, and secured by an external firewall.
