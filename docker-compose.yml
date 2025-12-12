@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: laf-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - laf-network
+
+  mongodb:
+    image: mongo:6.0
+    container_name: laf-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: 123456
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - laf-network
+
+volumes:
+  minio_data:
+    driver: local
+  mongodb_data:
+    driver: local
+
+networks:
+  laf-network:
+    driver: bridge

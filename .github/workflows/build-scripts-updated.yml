@@ -1,0 +1,31 @@
+name: build-scripts-updated
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "build/**"
+      - "deploy/**"
+      - ".github/workflows/build-scripts-updated.yml"
+      - ".github/workflows/build-sealos-cluster-image.yml"
+      - "!**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-scripts-updated-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log workflow completion
+        run: |
+          echo "Build scripts updated workflow completed"
+          echo "This will trigger build-sealos-cluster-image via workflow_run"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"

@@ -1,0 +1,116 @@
+{{- if .Values.default_region.runtime_exporter_secret }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    {{- include "runtime-exporter.labels" . | nindent 4 }}
+  name: runtime-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "runtime-exporter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata: 
+      labels:
+        {{- include "runtime-exporter.selectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: {{ .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "laf-server.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - image: docker.io/lafyun/runtime-exporter:latest
+          imagePullPolicy: Always
+          name: runtime-exporter
+          ports:
+            - name: http
+              containerPort: 2342
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http 
+          env:
+            - name: API_SECRET
+              value: {{ .Values.default_region.runtime_exporter_secret | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: DB_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+--- 
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    {{- include "runtime-exporter.labels" . | nindent 4 }}
+  name: runtime-exporter
+spec:
+  ports:
+    - name: http
+      port: 2342
+      protocol: TCP
+      targetPort: http 
+  selector:
+    {{- include "runtime-exporter.selectorLabels" . | nindent 4 }}
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    {{- include "runtime-exporter.labels" . | nindent 4 }}
+    release: prometheus
+  name: runtime-exporter
+spec:
+  endpoints:
+    - interval: 60s
+      path: "/runtime/metrics/{{ .Values.default_region.runtime_exporter_secret}}"
+      scrapeTimeout: 10s
+      honorLabels: true
+    - interval: 60s
+      path: "/database/metrics/{{ .Values.default_region.runtime_exporter_secret}}"
+      scrapeTimeout: 10s
+      honorLabels: true
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "runtime-exporter.labels" . | nindent 6 }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    {{- include "runtime-exporter.labels" . | nindent 4 }}
+    release: prometheus
+  name: prometheus-laf-billing.rules
+spec:
+  groups:
+    - name: prometheus-laf-billing.rules
+      interval: 60s
+      rules:
+        - record: laf:billing:cpu
+          expr: max_over_time(sum by (appid) (laf_runtime_cpu_limit{container!=""})[1h:])
+        - record: laf:billing:memory
+          expr: max_over_time(sum by (appid) (laf_runtime_memory_limit{container!=""})[1h:])
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kb-mongodb
+spec:
+  endpoints:
+    - interval: 30s
+      path: /metrics
+      port: http-metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+      apps.kubeblocks.io/component-name: mongodb
+{{- end }}

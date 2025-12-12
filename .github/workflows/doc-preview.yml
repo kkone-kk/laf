@@ -1,0 +1,39 @@
+name: Laf Doc Preview
+
+# todo: When the requirements are mature enough, refactor using TypeScript, create a generic GitHub Action, and make it available to users.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "docs/**"
+      - ".github/workflows/doc-preview.yml"
+
+permissions:
+  pull-requests: write
+
+env:
+  LAF_CI_DOCS_PREVIEW_PAT: ${{ secrets.LAF_CI_DOCS_PREVIEW_PAT }}
+  LAF_CI_DOCS_PREVIEW_APPID: ${{ secrets.LAF_CI_DOCS_PREVIEW_APPID }}
+  LAF_CI_DOCS_PREVIEW_API_URL: ${{ secrets.LAF_CI_DOCS_PREVIEW_API_URL }}
+  BUCKET_SHORT_NAME: pr-${{ github.event.pull_request.number }}-doc-preview
+
+jobs:
+  create-or-update-doc-preview:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Build Docs
+        uses: ./.github/actions/build-docs
+
+      - name: PR build summary
+        run: |
+          echo "📖 Documentation built successfully for PR #${{ github.event.pull_request.number }}"
+          echo "⚠️  Doc preview deployment is disabled for security reasons"
+          echo "🚀 Docs will be deployed automatically when this PR is merged"
+          echo "📋 Build completed at $(date)"

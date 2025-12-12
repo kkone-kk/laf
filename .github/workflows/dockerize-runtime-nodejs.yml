@@ -1,0 +1,427 @@
+name: dockerize-runtime-nodejs
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - "runtimes/nodejs/**"
+      - ".github/workflows/dockerize-runtime-nodejs.yml"
+      - "!**/*.md"
+      - "!runtimes/nodejs/package-lock.json"
+  push:
+    branches: [main]
+    paths:
+      - "runtimes/nodejs/**"
+      - ".github/workflows/dockerize-runtime-nodejs.yml"
+      - "!**/*.md"
+      - "!runtimes/nodejs/package-lock.json"
+
+env:
+  ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+  ALIYUN_NAMESPACE: ${{ secrets.ALIYUN_NAMESPACE }}
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+
+permissions:
+  pull-requests: write
+  packages: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: dockerize-runtime-nodejs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-runtime-nodejs-images:
+    name: Build Runtime Node.js Docker Images
+    permissions:
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on || 'ubuntu-24.04' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache node modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: runtimes/nodejs/node_modules
+          key: ${{ runner.os }}-${{ matrix.arch }}-node-${{ hashFiles('runtimes/nodejs/package-lock.json') }}
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+
+      - name: Install Package
+        working-directory: runtimes/nodejs
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Build runtime-nodejs
+        working-directory: runtimes/nodejs
+        run: npm run build
+
+      - name: Set up QEMU
+        if: ${{ matrix.arch != runner.arch }}
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' && env.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to Github Container Hub
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Aliyun Registry
+        uses: docker/login-action@v3
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' && env.ALIYUN_REGISTRY }}
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs
+            ${{ env.DOCKERHUB_USERNAME && format('docker.io/{0}/laf-runtime-nodejs', env.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.ALIYUN_REGISTRY && format('{0}/{1}/laf-runtime-nodejs', env.ALIYUN_REGISTRY, env.ALIYUN_NAMESPACE) || '' }}
+
+      - name: Build for ${{ matrix.arch }}
+        id: docker-build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./runtimes/nodejs
+          file: ./runtimes/nodejs/Dockerfile
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/${{ matrix.arch }}
+          # PR builds: load locally, Main builds: push by digest
+          push: false
+          load: ${{ github.event_name == 'pull_request' }}
+          outputs: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' && format('type=image,"name=ghcr.io/{0}/laf-runtime-nodejs{1}{2}",name-canonical=true,push-by-digest=true,push=true', github.repository_owner, env.DOCKERHUB_USERNAME && format(',docker.io/{0}/laf-runtime-nodejs', env.DOCKERHUB_USERNAME) || '', env.ALIYUN_REGISTRY && format(',{0}/{1}/laf-runtime-nodejs', env.ALIYUN_REGISTRY, env.ALIYUN_NAMESPACE) || '') || '' }}
+
+      - name: Export digest
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        run: |
+          mkdir -p ${{ runner.temp }}/digests-nodejs
+          digest="${{ steps.docker-build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests-nodejs/${digest#sha256:}"
+
+      - name: Upload digest
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-runtime-nodejs-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests-nodejs/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && matrix.arch == 'amd64' && always()
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const buildSuccess = '${{ steps.docker-build.outcome }}' === 'success';
+            const emoji = buildSuccess ? '✅' : '❌';
+            const status = buildSuccess ? 'Success' : 'Failed';
+
+            let body = `## ${emoji} laf Runtime Node.js Image Build ${status}\n\n`;
+            body += `### Build Details\n\n`;
+            body += `| Item | Value |\n`;
+            body += `|------|-------|\n`;
+            body += `| Build Status | ${buildSuccess ? '✅ Passed' : '❌ Failed'} |\n`;
+            body += `| Platforms | linux/amd64 (PR validation) |\n`;
+            body += `| Push to Registry | ⚠️ No (PR build only) |\n`;
+            body += `| Node Version | 18.x |\n\n`;
+
+            if (buildSuccess) {
+              body += `### 📦 Image will be published after merge to main\n\n`;
+              body += `**Note**: PR builds only verify the Docker build process for linux/amd64. Multi-platform images (amd64 + arm64) are built and pushed only when merged to main.\n\n`;
+            }
+
+            body += `**Commit**: \`${{ github.sha }}\`\n`;
+            body += `**Triggered by**: @${{ github.actor }}\n`;
+
+            try {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+
+              const botComment = comments.find(comment =>
+                comment.user.type === 'Bot' &&
+                comment.body.includes('laf Runtime Node.js Image Build')
+              );
+
+              if (botComment) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: botComment.id,
+                  body: body
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: body
+                });
+              }
+            } catch (error) {
+              console.log('Failed to post comment:', error.message);
+              console.log('This might be expected for PRs from forks');
+            }
+
+  build-runtime-nodejs-init-images:
+    name: Build Runtime Node.js Init Docker Images
+    permissions:
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on || 'ubuntu-24.04' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        if: ${{ matrix.arch != runner.arch }}
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' && env.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to Github Container Hub
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Aliyun Registry
+        uses: docker/login-action@v3
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' && env.ALIYUN_REGISTRY }}
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs-init
+            ${{ env.DOCKERHUB_USERNAME && format('docker.io/{0}/laf-runtime-nodejs-init', env.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.ALIYUN_REGISTRY && format('{0}/{1}/laf-runtime-nodejs-init', env.ALIYUN_REGISTRY, env.ALIYUN_NAMESPACE) || '' }}
+
+      - name: Build for ${{ matrix.arch }}
+        id: docker-build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./runtimes/nodejs
+          file: ./runtimes/nodejs/Dockerfile.init
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/${{ matrix.arch }}
+          # PR builds: load locally, Main builds: push by digest
+          push: false
+          load: ${{ github.event_name == 'pull_request' }}
+          outputs: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' && format('type=image,"name=ghcr.io/{0}/laf-runtime-nodejs-init{1}{2}",name-canonical=true,push-by-digest=true,push=true', github.repository_owner, env.DOCKERHUB_USERNAME && format(',docker.io/{0}/laf-runtime-nodejs-init', env.DOCKERHUB_USERNAME) || '', env.ALIYUN_REGISTRY && format(',{0}/{1}/laf-runtime-nodejs-init', env.ALIYUN_REGISTRY, env.ALIYUN_NAMESPACE) || '') || '' }}
+
+      - name: Export digest
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        run: |
+          mkdir -p ${{ runner.temp }}/digests-nodejs-init
+          digest="${{ steps.docker-build.outputs.digest }}"
+          touch "${{ runner.temp }}/digests-nodejs-init/${digest#sha256:}"
+
+      - name: Upload digest
+        if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-runtime-nodejs-init-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests-nodejs-init/*
+          if-no-files-found: error
+          retention-days: 1
+
+  release-runtime-nodejs-images:
+    name: Push Runtime Node.js Docker Images
+    permissions:
+      packages: write
+    needs: build-runtime-nodejs-images
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+    steps:
+      - name: Login to DockerHub
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to Github Container Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Aliyun Registry
+        uses: docker/login-action@v3
+        if: ${{ env.ALIYUN_REGISTRY }}
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Download digests
+        uses: actions/download-artifact@v5
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-runtime-nodejs-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs
+            ${{ env.DOCKERHUB_USERNAME && format('docker.io/{0}/laf-runtime-nodejs', env.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.ALIYUN_REGISTRY && format('{0}/{1}/laf-runtime-nodejs', env.ALIYUN_REGISTRY, env.ALIYUN_NAMESPACE) || '' }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          for TAG in $DOCKER_METADATA_OUTPUT_TAGS; do
+            docker buildx imagetools create -t $TAG \
+              $(printf 'ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs@sha256:%s ' *)
+            sleep 3
+          done
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs:${{ steps.meta.outputs.version }}
+
+  release-runtime-nodejs-init-images:
+    name: Push Runtime Node.js Init Docker Images
+    permissions:
+      packages: write
+    needs: build-runtime-nodejs-init-images
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'pull_request' && github.actor != 'dependabot[bot]' }}
+    steps:
+      - name: Login to DockerHub
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to Github Container Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Aliyun Registry
+        uses: docker/login-action@v3
+        if: ${{ env.ALIYUN_REGISTRY }}
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Download digests
+        uses: actions/download-artifact@v5
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-runtime-nodejs-init-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs-init
+            ${{ env.DOCKERHUB_USERNAME && format('docker.io/{0}/laf-runtime-nodejs-init', env.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.ALIYUN_REGISTRY && format('{0}/{1}/laf-runtime-nodejs-init', env.ALIYUN_REGISTRY, env.ALIYUN_NAMESPACE) || '' }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          for TAG in $DOCKER_METADATA_OUTPUT_TAGS; do
+            docker buildx imagetools create -t $TAG \
+              $(printf 'ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs-init@sha256:%s ' *)
+            sleep 3
+          done
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/laf-runtime-nodejs-init:${{ steps.meta.outputs.version }}

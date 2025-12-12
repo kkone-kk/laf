@@ -1,0 +1,21 @@
+.VPSidebar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 
+.VPDocAside .outline-link {
+  color: rgb(6, 63, 148);
+}
+
+.VPDocAside .outline-link {
+  font-size: 14px;
+}
+
+.VPDocAside .outline-link.active {
+  color: rgb(82, 7, 234);
+}
+
+
+.VPDocAside .outline-link:hover {
+  color: rgb(82, 7, 234);
+} */
