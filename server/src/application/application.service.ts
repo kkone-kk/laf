@@ -27,7 +27,6 @@ import { RegionService } from 'src/region/region.service'
 import { assert } from 'console'
 import { Region } from 'src/region/entities/region'
 import { EventEmitter2 } from '@nestjs/event-emitter'
-import { ApplicationCreatingEvent } from './events/application-creating.event'
 
 @Injectable()
 export class ApplicationService {
@@ -83,11 +82,12 @@ export class ApplicationService {
       })
 
       // create application
+      // State is Running (Created) by default
       await db.collection<Application>('Application').insertOne({
         appid,
         name: dto.name,
-        state: dto.state || ApplicationState.Running,
-        phase: ApplicationPhase.Creating,
+        state: ApplicationState.Running,
+        phase: ApplicationPhase.Created,
         tags: [],
         createdBy: userid,
         lockedAt: TASK_LOCK_INIT_TIME,

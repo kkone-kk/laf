@@ -7,6 +7,12 @@ import { DatabaseChangeStream } from '../database-change-stream'
 import { FunctionModule } from './module'
 import { ChangeStreamDocument } from 'mongodb'
 
+// Define State Enum here or import if possible (but we are in runtime, shared entity might be tricky)
+enum CloudFunctionState {
+  Running = 'Running',
+  Stopped = 'Stopped',
+}
+
 export class FunctionCache {
   private static cache: Map<string, ICloudFunctionData> = new Map()
 
@@ -18,7 +24,11 @@ export class FunctionCache {
       .toArray()
 
     for (const func of funcs) {
-      FunctionCache.cache.set(func.name, func)
+      // Filter by state. Default to Stopped if undefined? Or load all?
+      // User wants "Function Running" status.
+      if (func['state'] === CloudFunctionState.Running) {
+         FunctionCache.cache.set(func.name, func)
+      }
     }
 
     DatabaseChangeStream.onStreamChange(
@@ -44,8 +54,23 @@ export class FunctionCache {
         .collection<ICloudFunctionData>(CLOUD_FUNCTION_COLLECTION)
         .findOne({ _id: change.documentKey._id })
 
-      // add func in map
-      FunctionCache.cache.set(func.name, func)
+      if (func['state'] === CloudFunctionState.Running) {
+        FunctionCache.cache.set(func.name, func)
+      }
+
+    } else if (change.operationType === 'update') {
+       const func = await DatabaseAgent.db
+        .collection<ICloudFunctionData>(CLOUD_FUNCTION_COLLECTION)
+        .findOne({ _id: change.documentKey._id })
+
+      if (func['state'] === CloudFunctionState.Running) {
+        FunctionCache.cache.set(func.name, func)
+      } else {
+        // If updated to Stopped, remove it
+        FunctionModule.deleteCache()
+        FunctionCache.cache.delete(func.name)
+      }
+
     } else if (change.operationType == 'delete') {
       FunctionModule.deleteCache()
       // remove this func

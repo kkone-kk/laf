@@ -13,7 +13,7 @@ import { CompileFunctionDto } from './dto/compile-function.dto'
 import { DatabaseService } from 'src/database/database.service'
 import { SystemDatabase } from 'src/system-database'
 import { ClientSession, ObjectId } from 'mongodb'
-import { CloudFunction } from './entities/cloud-function'
+import { CloudFunction, CloudFunctionState } from './entities/cloud-function'
 import { ApplicationConfiguration } from 'src/application/entities/application-configuration'
 import { CloudFunctionHistory } from './entities/cloud-function-history'
 import { TriggerService } from 'src/trigger/trigger.service'
@@ -25,6 +25,7 @@ import { RegionService } from 'src/region/region.service'
 import { GetApplicationNamespace } from 'src/utils/getter'
 import { Region } from 'src/region/entities/region'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
+import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
 
 @Injectable()
 export class FunctionService {
@@ -39,6 +40,7 @@ export class FunctionService {
     private readonly functionRecycleBinService: FunctionRecycleBinService,
     private readonly httpService: HttpService,
     private readonly regionService: RegionService,
+    private readonly processManager: ProcessManagerService,
   ) {}
   async create(appid: string, userid: ObjectId, dto: CreateFunctionDto) {
     await this.db.collection<CloudFunction>('CloudFunction').insertOne({
@@ -53,6 +55,7 @@ export class FunctionService {
       createdBy: userid,
       methods: dto.methods,
       tags: dto.tags || [],
+      state: CloudFunctionState.Stopped,
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -60,6 +63,8 @@ export class FunctionService {
     const fn = await this.findOne(appid, dto.name)
 
     await this.addOneHistoryRecord(fn, 'created')
+    // Don't publish on create automatically if we want manual start control?
+    // But usually we publish so it exists in the 'published' collection.
     await this.publish(fn)
     return fn
   }
@@ -324,13 +329,25 @@ export class FunctionService {
    * @param appid
    * @returns
    */
-  getInClusterRuntimeUrl(region: Region, appid: string) {
-    const serviceName = appid
-    const namespace = GetApplicationNamespace(region, appid)
-    const appAddress = `${serviceName}.${namespace}:8000`
+  async getInClusterRuntimeUrl(region: Region, appid: string) {
+    // In local mode with shared runtime, we need to get the actual port from ProcessManager
+    // or return a proxy URL that local gateway handles.
+    // If local gateway is used, it might route by Host header?
+    // But ProcessManager allocates random ports.
 
-    const url = `http://${appAddress}`
-    return url
+    // Check if the process is running and get its port
+    const port = this.processManager.getPort(appid)
+    if (port) {
+      return `http://localhost:${port}`
+    }
+
+    // Fallback or error if not running
+    // If not running, we might need to start it, but this is a getter.
+    // Return a dummy port or throw?
+    // Let's assume Local Gateway handles mapping 8080 -> appid port if we are using it.
+    // But here we need internal URL.
+
+    return `http://localhost:${port || 8000}`
   }
 
   async getLogs(

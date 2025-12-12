@@ -7,7 +7,6 @@ import { HttpModule } from '@nestjs/axios'
 import { ApplicationModule } from './application/application.module'
 import { ThrottlerModule } from '@nestjs/throttler'
 import { InitializerModule } from './initializer/initializer.module'
-import { InstanceModule } from './instance/instance.module'
 import { ScheduleModule } from '@nestjs/schedule'
 import { DatabaseModule } from './database/database.module'
 import { StorageModule } from './storage/storage.module'
@@ -48,7 +47,6 @@ import { LocalClusterModule } from './local-cluster/local-cluster.module'
     AuthenticationModule,
     ApplicationModule,
     InitializerModule,
-    InstanceModule,
     DatabaseModule,
     StorageModule,
     LogModule,

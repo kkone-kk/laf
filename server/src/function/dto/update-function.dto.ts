@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import {
   IsArray,
+  IsEnum,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -9,7 +10,7 @@ import {
   MaxLength,
 } from 'class-validator'
 import { HTTP_METHODS } from '../../constants'
-import { HttpMethod } from '../entities/cloud-function'
+import { CloudFunctionState, HttpMethod } from '../entities/cloud-function'
 
 export class UpdateFunctionDto {
   @ApiProperty({
@@ -28,7 +29,7 @@ export class UpdateFunctionDto {
   methods: HttpMethod[] = []
 
   @ApiProperty({ description: 'The source code of the function' })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
   @MaxLength(1024 * 512)
   code: string
@@ -44,6 +45,11 @@ export class UpdateFunctionDto {
   @MaxLength(256)
   @IsOptional()
   changelog?: string
+
+  @ApiPropertyOptional({ enum: CloudFunctionState })
+  @IsOptional()
+  @IsEnum(CloudFunctionState)
+  state?: CloudFunctionState
 
   validate() {
     return null

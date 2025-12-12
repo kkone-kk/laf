@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common'
 import { ApplicationController } from './application.controller'
 import { ApplicationService } from './application.service'
 import { ApplicationTaskService } from './application-task.service'
-import { InstanceService } from '../instance/instance.service'
 import { JwtService } from '@nestjs/jwt'
 import { FunctionService } from '../function/function.service'
 import { EnvironmentVariableService } from './environment.service'
@@ -42,7 +41,6 @@ import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedica
   providers: [
     ApplicationService,
     ApplicationTaskService,
-    InstanceService,
     FunctionRecycleBinService,
     JwtService,
     FunctionService,

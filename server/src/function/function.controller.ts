@@ -28,10 +28,12 @@ import { I18nTranslations } from '../generated/i18n.generated'
 import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
 import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 import { CloudFunctionHistory } from './entities/cloud-function-history'
-import { CloudFunction } from './entities/cloud-function'
+import { CloudFunction, CloudFunctionState } from './entities/cloud-function'
 import { UpdateFunctionDebugDto } from './dto/update-function-debug.dto'
 import { FunctionRecycleBinService } from 'src/recycle-bin/cloud-function/function-recycle-bin.service'
 import { STORAGE_LIMIT } from 'src/constants'
+import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
+import { ApplicationConfigurationService } from 'src/application/configuration.service'
 
 @ApiTags('Function')
 @ApiBearerAuth('Authorization')
@@ -42,6 +44,8 @@ export class FunctionController {
     private readonly bundleService: BundleService,
     private readonly functionRecycleBinService: FunctionRecycleBinService,
     private readonly i18n: I18nService<I18nTranslations>,
+    private readonly processManager: ProcessManagerService,
+    private readonly appConfigService: ApplicationConfigurationService,
   ) {}
 
   /**
@@ -161,7 +165,7 @@ export class FunctionController {
   }
 
   /**
-   * Update a function
+   * Update a function (Including Start/Stop state)
    * @param appid
    * @param name
    * @param dto
@@ -184,6 +188,21 @@ export class FunctionController {
         HttpStatus.NOT_FOUND,
       )
     }
+
+    // Handle State Change: Start/Stop
+    if (dto.state) {
+      if (dto.state === CloudFunctionState.Running) {
+        // When starting a function, ensure the runtime process is running
+        const conf = await this.appConfigService.findOne(appid)
+        const envs = conf.environments || []
+        const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+        // Inject shared dependencies? Handled by ProcessManager via CWD
+        await this.processManager.startProcess(appid, envObj)
+      }
+      // If stopping, we don't necessarily stop the process unless all functions are stopped.
+      // But for now, we just update the DB state. The runtime should pick up the change via ChangeStream.
+    }
+
     const res = await this.functionsService.updateOne(func, dto)
     if (!res) {
       return ResponseUtil.error(i18n.t('function.update.error'))

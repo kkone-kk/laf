@@ -9,9 +9,7 @@ export class ProcessManagerService {
   private processes: Map<string, child_process.ChildProcess> = new Map()
   private appPorts: Map<string, number> = new Map()
 
-  // Start with 8000, but maybe dynamic allocation is better.
-  // Actually, laf runtime listens on 8000 inside container.
-  // Locally, we need to assign different ports.
+  // Start with 10000
   private nextPort = 10000
 
   constructor() {}
@@ -19,38 +17,43 @@ export class ProcessManagerService {
   async startProcess(appid: string, env: any) {
     if (this.processes.has(appid)) {
       this.logger.log(`Process for ${appid} already running`)
-      return
+      return { pid: this.processes.get(appid).pid, port: this.appPorts.get(appid) }
     }
 
-    const port = this.appPorts.get(appid) || this.nextPort++
-    this.appPorts.set(appid, port)
+    let port = this.appPorts.get(appid)
+    if (!port) {
+      port = this.nextPort++
+      this.appPorts.set(appid, port)
+    }
 
-    // Modify env to listen on assigned port
-    // Filter out potential secrets from process.env if needed, but for now we just want to ensure we don't pass everything blindly if it causes issues.
-    // However, Node process usually needs PATH etc.
-    // We will keep process.env but be aware.
-    // Actually, let's explicitely set what we need.
-    const processEnv = { ...process.env, ...env, __PORT: port.toString() }
-
-    // Locate runtime path
-    // Assuming we are in server/src/...
-    // We need to point to runtimes/nodejs
-    // __dirname is server/src/local-cluster
+    // Shared runtime path
+    const sharedRuntimePath = path.resolve(__dirname, '../../../runtimes/node-shared')
     const runtimePath = path.resolve(__dirname, '../../../runtimes/nodejs')
     const distPath = path.join(runtimePath, 'dist/index.js')
 
-    // Ensure runtime is built
+     // Ensure runtime is built
     if (!fs.existsSync(distPath)) {
         this.logger.error(`Runtime not found at ${distPath}. Please build it first.`)
         throw new Error(`Runtime not found at ${distPath}`)
     }
 
-    this.logger.log(`Starting process for ${appid} on port ${port}`)
+    // Prepare shared environment
+    const processEnv = {
+      ...process.env,
+      ...env,
+      __PORT: port.toString(),
+      // Force node to look in shared modules if needed, though CWD usually handles it
+      // NODE_PATH: path.join(sharedRuntimePath, 'node_modules')
+    }
 
+    this.logger.log(`Starting process for ${appid} on port ${port} with shared runtime`)
+
+    // We run the code from 'runtimes/nodejs/dist/index.js'
+    // BUT we set CWD to 'runtimes/node-shared' so it picks up the shared node_modules
     const child = child_process.spawn('node', [distPath], {
       env: processEnv,
-      cwd: runtimePath, // Set CWD to runtime folder so it finds node_modules
-      stdio: 'inherit' // Pipe output to parent
+      cwd: sharedRuntimePath,
+      stdio: 'inherit'
     })
 
     this.processes.set(appid, child)
@@ -68,7 +71,6 @@ export class ProcessManagerService {
     if (child) {
       child.kill()
       this.processes.delete(appid)
-      // keeping port reservation for now
     }
   }
 
@@ -78,5 +80,10 @@ export class ProcessManagerService {
 
   getPort(appid: string) {
       return this.appPorts.get(appid)
+  }
+
+  async reloadProcess(appid: string, env: any) {
+    await this.stopProcess(appid)
+    return await this.startProcess(appid, env)
   }
 }
