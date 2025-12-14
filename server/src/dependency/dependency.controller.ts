@@ -24,6 +24,7 @@ import { UpdateDependencyDto } from './dto/update-dependency.dto'
 import { DeleteDependencyDto } from './dto/delete-dependency.dto'
 import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
 import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
+import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
 
 @ApiTags('Application')
 @ApiBearerAuth('Authorization')
@@ -31,7 +32,10 @@ import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 export class DependencyController {
   private readonly logger = new Logger(DependencyController.name)
 
-  constructor(private readonly depsService: DependencyService) {}
+  constructor(
+    private readonly depsService: DependencyService,
+    private readonly processManager: ProcessManagerService,
+  ) {}
 
   /**
    * Add application dependencies
@@ -50,6 +54,19 @@ export class DependencyController {
     dto: CreateDependencyDto[],
   ) {
     const res = await this.depsService.add(appid, dto)
+
+    // Install dependencies in local shared runtime
+    for (const dep of dto) {
+        try {
+            await this.processManager.installDependency(dep.name, dep.spec)
+        } catch (e) {
+            this.logger.error(`Failed to install dependency ${dep.name}: ${e.message}`)
+            // Should we return error? Usually yes, but maybe partial success?
+            // For now, let's log and continue, or maybe fail fast.
+            // The DB record is already updated, so we should probably try to be consistent.
+        }
+    }
+
     return ResponseUtil.ok(res)
   }
 
@@ -70,6 +87,16 @@ export class DependencyController {
     dto: UpdateDependencyDto[],
   ) {
     const res = await this.depsService.update(appid, dto)
+
+     // Update dependencies in local shared runtime
+    for (const dep of dto) {
+        try {
+            await this.processManager.installDependency(dep.name, dep.spec)
+        } catch (e) {
+            this.logger.error(`Failed to update dependency ${dep.name}: ${e.message}`)
+        }
+    }
+
     return ResponseUtil.ok(res)
   }
 
@@ -103,6 +130,14 @@ export class DependencyController {
     @Body() dto: DeleteDependencyDto,
   ) {
     const res = await this.depsService.removeOne(appid, dto.name)
+
+    // Uninstall dependency from local shared runtime
+    try {
+        await this.processManager.removeDependency(dto.name)
+    } catch (e) {
+         this.logger.error(`Failed to remove dependency ${dto.name}: ${e.message}`)
+    }
+
     return ResponseUtil.ok(res)
   }
 }

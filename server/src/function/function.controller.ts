@@ -34,6 +34,11 @@ import { FunctionRecycleBinService } from 'src/recycle-bin/cloud-function/functi
 import { STORAGE_LIMIT } from 'src/constants'
 import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
 import { ApplicationConfigurationService } from 'src/application/configuration.service'
+import { extractImports } from 'src/utils/dependency/extract-imports'
+import { DependencyService } from 'src/dependency/dependency.service'
+import { RUNTIME_BUILTIN_DEPENDENCIES } from 'src/runtime-builtin-deps'
+import * as path from 'path'
+import * as fs from 'fs'
 
 @ApiTags('Function')
 @ApiBearerAuth('Authorization')
@@ -46,6 +51,7 @@ export class FunctionController {
     private readonly i18n: I18nService<I18nTranslations>,
     private readonly processManager: ProcessManagerService,
     private readonly appConfigService: ApplicationConfigurationService,
+    private readonly depsService: DependencyService,
   ) {}
 
   /**
@@ -86,6 +92,12 @@ export class FunctionController {
           args: { count: MAX_FUNCTION_COUNT },
         }),
       )
+    }
+
+    // Check dependencies for new function
+    const missingDeps = await this.checkDependencies(appid, dto.code)
+    if (missingDeps.length > 0) {
+        return ResponseUtil.error(`Missing dependencies: ${missingDeps.join(', ')}. Please install them in the NPM Dependencies tab.`)
     }
 
     const res = await this.functionsService.create(appid, req.user._id, dto)
@@ -194,6 +206,14 @@ export class FunctionController {
         i18n.t('function.common.notFound', { args: { name } }),
         HttpStatus.NOT_FOUND,
       )
+    }
+
+    // Check dependencies if code is updating
+    if (dto.code) {
+         const missingDeps = await this.checkDependencies(appid, dto.code)
+         if (missingDeps.length > 0) {
+             return ResponseUtil.error(`Missing dependencies: ${missingDeps.join(', ')}. Please install them in the NPM Dependencies tab.`)
+         }
     }
 
     // Handle State Change: Start/Stop or Code Update (Publish)
@@ -306,5 +326,37 @@ export class FunctionController {
 
     const res = await this.functionsService.getHistory(func)
     return ResponseUtil.ok(res)
+  }
+
+  private async checkDependencies(appid: string, code: string): Promise<string[]> {
+      const imports = extractImports(code)
+      if (imports.length === 0) return []
+
+      const dependencies = await this.depsService.getMergedObjects(appid)
+      const depNames = dependencies.map(d => d.name)
+      const builtinKeys = Object.keys(RUNTIME_BUILTIN_DEPENDENCIES)
+      const nodeBuiltins = ['fs', 'path', 'http', 'https', 'crypto', 'os', 'util', 'events', 'stream', 'buffer', 'url', 'zlib', 'querystring', 'child_process', 'cluster', 'dgram', 'dns', 'net', 'readline', 'repl', 'tls', 'tty', 'v8', 'vm', 'worker_threads']
+
+      const missing = []
+
+      for (const imp of imports) {
+          if (imp.startsWith('.') || imp.startsWith('/')) continue // Local relative imports
+          if (nodeBuiltins.includes(imp)) continue
+          if (builtinKeys.includes(imp)) continue
+          if (depNames.includes(imp)) continue
+
+          // Check if exists in shared node_modules physically?
+          // Sometimes dependencies have transitive dependencies that users might import (bad practice but happens).
+          // But strict check is safer.
+          // However, we can check physical presence to be sure.
+          try {
+             const sharedPath = path.resolve(__dirname, '../../../../runtimes/node-shared/node_modules', imp)
+             if (fs.existsSync(sharedPath)) continue
+          } catch (e) {}
+
+          missing.push(imp)
+      }
+
+      return [...new Set(missing)]
   }
 }

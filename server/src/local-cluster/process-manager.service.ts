@@ -86,4 +86,38 @@ export class ProcessManagerService {
     await this.stopProcess(appid)
     return await this.startProcess(appid, env)
   }
+
+  async installDependency(name: string, version: string) {
+    const sharedRuntimePath = path.resolve(__dirname, '../../../runtimes/node-shared')
+    this.logger.log(`Installing dependency ${name}@${version} in ${sharedRuntimePath}`)
+
+    return new Promise<void>((resolve, reject) => {
+      child_process.exec(`npm install ${name}@${version}`, { cwd: sharedRuntimePath }, (error, stdout, stderr) => {
+        if (error) {
+          this.logger.error(`Failed to install dependency: ${stderr}`)
+          reject(error)
+        } else {
+          this.logger.log(`Installed dependency: ${stdout}`)
+          resolve()
+        }
+      })
+    })
+  }
+
+  async removeDependency(name: string) {
+    const sharedRuntimePath = path.resolve(__dirname, '../../../runtimes/node-shared')
+    this.logger.log(`Removing dependency ${name} in ${sharedRuntimePath}`)
+
+    return new Promise<void>((resolve, reject) => {
+        child_process.exec(`npm uninstall ${name}`, { cwd: sharedRuntimePath }, (error, stdout, stderr) => {
+            if (error) {
+                this.logger.error(`Failed to remove dependency: ${stderr}`)
+                reject(error)
+            } else {
+                this.logger.log(`Removed dependency: ${stdout}`)
+                resolve()
+            }
+        })
+    })
+  }
 }
