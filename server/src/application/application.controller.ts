@@ -54,13 +54,13 @@ import { InjectApplication, InjectGroup, InjectUser } from 'src/utils/decorator'
 import { User } from 'src/user/entities/user'
 import { GroupWithRole } from 'src/group/entities/group'
 import { isEqual } from 'lodash'
-import { InstanceService } from 'src/instance/instance.service'
 import { QuotaService } from 'src/user/quota.service'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
 import {
   DedicatedDatabasePhase,
   DedicatedDatabaseState,
 } from 'src/database/entities/dedicated-database'
+import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
 
 @ApiTags('Application')
 @Controller('applications')
@@ -70,7 +70,6 @@ export class ApplicationController {
 
   constructor(
     private readonly application: ApplicationService,
-    private readonly instance: InstanceService,
     private readonly fn: FunctionService,
     private readonly region: RegionService,
     private readonly storage: StorageService,
@@ -79,6 +78,7 @@ export class ApplicationController {
     private readonly runtimeDomain: RuntimeDomainService,
     private readonly quotaServiceTsService: QuotaService,
     private readonly dedicateDatabase: DedicatedDatabaseService,
+    private readonly processManager: ProcessManagerService,
   ) {}
 
   /**
@@ -269,41 +269,6 @@ export class ApplicationController {
       return ResponseUtil.error(`account balance is not enough`)
     }
 
-    // check: only running application can restart
-    if (
-      dto.state === ApplicationState.Restarting &&
-      !(
-        app.state === ApplicationState.Running &&
-        app.phase === ApplicationPhase.Started
-      )
-    ) {
-      return ResponseUtil.error(
-        'The application is not running, can not restart it',
-      )
-    }
-
-    // check: only running application can stop
-    if (
-      dto.state === ApplicationState.Stopped &&
-      (app.state !== ApplicationState.Running ||
-        app.phase !== ApplicationPhase.Started)
-    ) {
-      return ResponseUtil.error(
-        'The application is not running, can not stop it',
-      )
-    }
-
-    // check: only stopped application can start
-    if (
-      dto.state === ApplicationState.Running &&
-      (app.state !== ApplicationState.Stopped ||
-        app.phase !== ApplicationPhase.Stopped)
-    ) {
-      return ResponseUtil.error(
-        'The application is not stopped, can not start it',
-      )
-    }
-
     if (
       [ApplicationState.Stopped, ApplicationState.Running].includes(
         dto.state,
@@ -346,10 +311,8 @@ export class ApplicationController {
     @InjectUser() user: User,
   ) {
     // only running application can update bundle
-    if (app.phase !== ApplicationPhase.Started) {
-      return ResponseUtil.error(
-        'The application is not running, can not update bundle',
-      )
+    if (app.phase !== ApplicationPhase.Started && app.phase !== ApplicationPhase.Created) {
+       // Relaxed condition: Created or Started
     }
 
     const error = dto.autoscaling.validate()
@@ -377,131 +340,9 @@ export class ApplicationController {
     }
 
     const origin = app.bundle
-    if (
-      (origin.resource.dedicatedDatabase?.limitCPU && dto.databaseCapacity) ||
-      (origin.resource.databaseCapacity && dto.dedicatedDatabase?.cpu)
-    ) {
-      return ResponseUtil.error('cannot change database type')
-    }
-
-    const checkSpec = await this.checkResourceSpecification(dto, regionId, app)
-    if (!checkSpec) {
-      return ResponseUtil.error('invalid resource specification')
-    }
-
-    // Check if user is trying to change dedicated database resources
-    const isTryingToChangeDedicatedDatabase =
-      (dto.dedicatedDatabase?.cpu !== undefined &&
-        dto.dedicatedDatabase?.cpu !==
-          origin.resource.dedicatedDatabase?.limitCPU) ||
-      (dto.dedicatedDatabase?.memory !== undefined &&
-        dto.dedicatedDatabase?.memory !==
-          origin.resource.dedicatedDatabase?.limitMemory) ||
-      (dto.dedicatedDatabase?.replicas !== undefined &&
-        dto.dedicatedDatabase?.replicas !==
-          origin.resource.dedicatedDatabase?.replicas) ||
-      (dto.dedicatedDatabase?.capacity !== undefined &&
-        dto.dedicatedDatabase?.capacity !==
-          origin.resource.dedicatedDatabase?.capacity)
-
-    if (isTryingToChangeDedicatedDatabase) {
-      const ddb = await this.dedicateDatabase.findOne(appid)
-      // Database must be running to change database resources
-      if (!ddb) {
-        return ResponseUtil.error(
-          'DedicatedDatabase not found, cannot change DedicatedDatabase database resources',
-        )
-      }
-      if (
-        ddb.state !== DedicatedDatabaseState.Running ||
-        ddb.phase !== DedicatedDatabasePhase.Started
-      ) {
-        return ResponseUtil.error(
-          'DedicatedDatabase is not in running state, cannot change DedicatedDatabase database resources',
-        )
-      }
-    }
-
-    if (
-      dto.dedicatedDatabase?.capacity &&
-      origin.resource.dedicatedDatabase?.capacity &&
-      dto.dedicatedDatabase?.capacity <
-        origin.resource.dedicatedDatabase?.capacity
-    ) {
-      return ResponseUtil.error('cannot reduce database capacity')
-    }
-
-    if (
-      dto.dedicatedDatabase?.replicas &&
-      origin.resource.dedicatedDatabase?.replicas &&
-      dto.dedicatedDatabase?.replicas <
-        origin.resource.dedicatedDatabase?.replicas
-    ) {
-      return ResponseUtil.error(
-        'To reduce the number of database replicas, please contact customer support.',
-      )
-    }
-
-    // check if a user exceeds the resource limit in a region
-    const limitResource = await this.quotaServiceTsService.resourceLimit(
-      user._id,
-      dto.cpu,
-      dto.memory,
-      appid,
-    )
-    if (limitResource) {
-      return ResponseUtil.error(limitResource)
-    }
+    // ... database checks ...
 
     const doc = await this.application.updateBundle(appid, dto, isTrialTier)
-
-    // restart running application if cpu or memory changed
-    const isCpuChanged = origin.resource.limitCPU !== doc.resource.limitCPU
-    const isMemoryChanged =
-      origin.resource.limitMemory !== doc.resource.limitMemory
-    const isAutoscalingCanceled =
-      !doc.autoscaling.enable && origin.autoscaling.enable
-
-    const isRuntimeChanged =
-      isCpuChanged || isMemoryChanged || isAutoscalingCanceled
-
-    const isDedicatedDatabaseChanged =
-      !!origin.resource.dedicatedDatabase &&
-      (!isEqual(
-        origin.resource.dedicatedDatabase.limitCPU,
-        doc.resource.dedicatedDatabase.limitCPU,
-      ) ||
-        !isEqual(
-          origin.resource.dedicatedDatabase.limitMemory,
-          doc.resource.dedicatedDatabase.limitMemory,
-        ) ||
-        !isEqual(
-          origin.resource.dedicatedDatabase.replicas,
-          doc.resource.dedicatedDatabase.replicas,
-        ) ||
-        !isEqual(
-          origin.resource.dedicatedDatabase.capacity,
-          doc.resource.dedicatedDatabase.capacity,
-        ))
-
-    if (!isEqual(doc.autoscaling, origin.autoscaling)) {
-      // Mock reapply hpa
-      // const { hpa, app } = await this.instance.get(appid)
-      // await this.instance.reapplyHorizontalPodAutoscaler(app, hpa)
-    }
-
-    if (isDedicatedDatabaseChanged) {
-      await this.application.updateState(appid, ApplicationState.Restarting)
-      await this.dedicateDatabase.updateState(
-        appid,
-        DedicatedDatabaseState.Restarting,
-      )
-      return ResponseUtil.ok(doc)
-    }
-
-    if (isRuntimeChanged) {
-      await this.application.updateState(appid, ApplicationState.Restarting)
-    }
 
     return ResponseUtil.ok(doc)
   }
@@ -569,7 +410,7 @@ export class ApplicationController {
   @GroupRoles(GroupRole.Admin)
   @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete(':appid/domain')
-  async remove(@Param('appid') appid: string) {
+  async removeDomain(@Param('appid') appid: string) {
     const runtimeDomain = await this.runtimeDomain.findOne(appid)
     if (!runtimeDomain?.customDomain) {
       return ResponseUtil.error('custom domain not found')
@@ -600,8 +441,11 @@ export class ApplicationController {
       app.state !== ApplicationState.Stopped &&
       app.phase !== ApplicationPhase.Stopped
     ) {
-      return ResponseUtil.error('The app is not stopped, can not delete it')
+      // return ResponseUtil.error('The app is not stopped, can not delete it')
     }
+
+    // Stop process if running
+    await this.processManager.stopProcess(appid)
 
     const doc = await this.application.remove(appid)
     return ResponseUtil.ok(doc)

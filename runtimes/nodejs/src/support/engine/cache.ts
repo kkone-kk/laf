@@ -1,4 +1,4 @@
-import { ICloudFunctionData } from './types'
+import { ICloudFunctionData, CloudFunctionState } from './types'
 import { logger } from '../logger'
 import { DatabaseAgent } from '../../db'
 import { CLOUD_FUNCTION_COLLECTION } from '../../constants'
@@ -18,7 +18,9 @@ export class FunctionCache {
       .toArray()
 
     for (const func of funcs) {
-      FunctionCache.cache.set(func.name, func)
+      if (func.state === CloudFunctionState.Running) {
+         FunctionCache.cache.set(func.name, func)
+      }
     }
 
     DatabaseChangeStream.onStreamChange(
@@ -44,8 +46,25 @@ export class FunctionCache {
         .collection<ICloudFunctionData>(CLOUD_FUNCTION_COLLECTION)
         .findOne({ _id: change.documentKey._id })
 
-      // add func in map
-      FunctionCache.cache.set(func.name, func)
+      if (func && func.state === CloudFunctionState.Running) {
+        FunctionCache.cache.set(func.name, func)
+      }
+
+    } else if (change.operationType === 'update') {
+       const func = await DatabaseAgent.db
+        .collection<ICloudFunctionData>(CLOUD_FUNCTION_COLLECTION)
+        .findOne({ _id: change.documentKey._id })
+
+      if (func && func.state === CloudFunctionState.Running) {
+        FunctionCache.cache.set(func.name, func)
+      } else {
+        // If updated to Stopped or something else, remove it
+        if (func) { // func exists but not running
+             FunctionModule.deleteCache()
+             FunctionCache.cache.delete(func.name)
+        }
+      }
+
     } else if (change.operationType == 'delete') {
       FunctionModule.deleteCache()
       // remove this func

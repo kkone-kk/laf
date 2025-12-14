@@ -15,6 +15,12 @@ export class ApplicationConfigurationService {
     private readonly dedicatedDatabaseService: DedicatedDatabaseService,
   ) {}
 
+  async findOne(appid: string) {
+    return this.db
+      .collection<ApplicationConfiguration>('ApplicationConfiguration')
+      .findOne({ appid })
+  }
+
   async count(appid: string) {
     return this.db
       .collection<ApplicationConfiguration>('ApplicationConfiguration')

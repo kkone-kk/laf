@@ -23,6 +23,7 @@ import { ResponseUtil } from 'src/utils/response'
 import { EnvironmentVariableService } from './environment.service'
 import { CreateEnvironmentDto } from './dto/create-env.dto'
 import { APPLICATION_SECRET_KEY } from 'src/constants'
+import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
 
 @ApiTags('Application')
 @ApiBearerAuth('Authorization')
@@ -30,7 +31,10 @@ import { APPLICATION_SECRET_KEY } from 'src/constants'
 export class EnvironmentVariableController {
   private readonly logger = new Logger(EnvironmentVariableController.name)
 
-  constructor(private readonly confService: EnvironmentVariableService) {}
+  constructor(
+    private readonly confService: EnvironmentVariableService,
+    private readonly processManager: ProcessManagerService,
+  ) {}
 
   /**
    * Update environment variables (replace all)
@@ -58,6 +62,13 @@ export class EnvironmentVariableController {
     }
 
     const res = await this.confService.updateAll(appid, dto)
+
+    // Reload process with new envs if running
+    if (this.processManager.getProcess(appid)) {
+      const envObj = dto.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+      await this.processManager.reloadProcess(appid, envObj)
+    }
+
     return ResponseUtil.ok(res)
   }
 
@@ -78,6 +89,14 @@ export class EnvironmentVariableController {
     }
 
     const res = await this.confService.setOne(appid, dto)
+
+     // Reload process with new envs if running
+    if (this.processManager.getProcess(appid)) {
+      const envs = await this.confService.findAll(appid)
+      const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+      await this.processManager.reloadProcess(appid, envObj)
+    }
+
     return ResponseUtil.ok(res)
   }
 
@@ -112,6 +131,14 @@ export class EnvironmentVariableController {
     }
 
     const res = await this.confService.deleteOne(appid, name)
+
+    // Reload process with new envs if running
+    if (this.processManager.getProcess(appid)) {
+      const envs = await this.confService.findAll(appid)
+      const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+      await this.processManager.reloadProcess(appid, envObj)
+    }
+
     return ResponseUtil.ok(res)
   }
 }

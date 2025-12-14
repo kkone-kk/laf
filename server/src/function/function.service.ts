@@ -13,7 +13,7 @@ import { CompileFunctionDto } from './dto/compile-function.dto'
 import { DatabaseService } from 'src/database/database.service'
 import { SystemDatabase } from 'src/system-database'
 import { ClientSession, ObjectId } from 'mongodb'
-import { CloudFunction } from './entities/cloud-function'
+import { CloudFunction, CloudFunctionState } from './entities/cloud-function'
 import { ApplicationConfiguration } from 'src/application/entities/application-configuration'
 import { CloudFunctionHistory } from './entities/cloud-function-history'
 import { TriggerService } from 'src/trigger/trigger.service'
@@ -25,6 +25,7 @@ import { RegionService } from 'src/region/region.service'
 import { GetApplicationNamespace } from 'src/utils/getter'
 import { Region } from 'src/region/entities/region'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
+import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
 
 @Injectable()
 export class FunctionService {
@@ -39,6 +40,7 @@ export class FunctionService {
     private readonly functionRecycleBinService: FunctionRecycleBinService,
     private readonly httpService: HttpService,
     private readonly regionService: RegionService,
+    private readonly processManager: ProcessManagerService,
   ) {}
   async create(appid: string, userid: ObjectId, dto: CreateFunctionDto) {
     await this.db.collection<CloudFunction>('CloudFunction').insertOne({
@@ -53,6 +55,7 @@ export class FunctionService {
       createdBy: userid,
       methods: dto.methods,
       tags: dto.tags || [],
+      state: CloudFunctionState.Running, // Default to Running on creation
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -148,21 +151,32 @@ export class FunctionService {
       }
     }
 
+    const updateQuery: any = {
+      $set: {
+        desc: dto.description,
+        methods: dto.methods,
+        tags: dto.tags || [],
+        updatedAt: new Date(),
+      },
+    }
+
+    if (dto.code) {
+      updateQuery.$set.source = {
+        code: dto.code,
+        compiled: compileTs2js(dto.code, func.name),
+        version: func.source.version + 1,
+      }
+      // If updating code, ensure it is set to Running
+      updateQuery.$set.state = CloudFunctionState.Running
+    }
+
+    if (dto.state) {
+      updateQuery.$set.state = dto.state
+    }
+
     await this.db.collection<CloudFunction>('CloudFunction').updateOne(
       { appid: func.appid, name: func.name },
-      {
-        $set: {
-          source: {
-            code: dto.code,
-            compiled: compileTs2js(dto.code, func.name),
-            version: func.source.version + 1,
-          },
-          desc: dto.description,
-          methods: dto.methods,
-          tags: dto.tags || [],
-          updatedAt: new Date(),
-        },
-      },
+      updateQuery,
     )
 
     const fn = await this.findOne(func.appid, func.name)
@@ -324,13 +338,37 @@ export class FunctionService {
    * @param appid
    * @returns
    */
-  getInClusterRuntimeUrl(region: Region, appid: string) {
-    const serviceName = appid
-    const namespace = GetApplicationNamespace(region, appid)
-    const appAddress = `${serviceName}.${namespace}:8000`
+  async getInClusterRuntimeUrl(region: Region, appid: string) {
+    // Check if the process is running and get its port
+    const port = this.processManager.getPort(appid)
+    if (port) {
+      return `http://localhost:${port}`
+    }
 
-    const url = `http://${appAddress}`
-    return url
+    // Try to start it (lazy loading)
+    // We need envs. This logic is duplicated from other places, ideally should be centralized.
+    // For now, if port is missing, we try to start it if we can access DB, otherwise we fail.
+    // However, this method is usually called in contexts where we might not want to await a start.
+    // But returning a dead URL is worse.
+
+    // Attempt to start process via ProcessRecoveryService logic or similar?
+    // Accessing AppConfigService here might be circular or complex dependency-wise if not careful.
+    // But let's try to inject AppConfigService if we can, or just query DB directly since we have 'db'.
+
+    try {
+       const conf = await this.db.collection<ApplicationConfiguration>('ApplicationConfiguration').findOne({ appid })
+       if (conf) {
+          const envs = conf.environments || []
+          const envObj = envs.reduce((acc, cur) => ({ ...acc, [cur.name]: cur.value }), {})
+          const { port: newPort } = await this.processManager.startProcess(appid, envObj)
+          return `http://localhost:${newPort}`
+       }
+    } catch (e) {
+      this.logger.error(`Failed to lazy-start process for ${appid}`, e)
+    }
+
+    // If all else fails
+    throw new Error(`Runtime process for ${appid} is not running and could not be started.`)
   }
 
   async getLogs(
