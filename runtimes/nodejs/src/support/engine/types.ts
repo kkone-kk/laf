@@ -68,6 +68,11 @@ export enum FunctionStatus {
   ENABLED = 1,
 }
 
+export enum CloudFunctionState {
+  Running = 'Running',
+  Stopped = 'Stopped',
+}
+
 /**
  * Model CloudFunctionSource
  *
@@ -93,6 +98,7 @@ export interface ICloudFunctionData {
   desc: string
   tags: string[]
   methods: string[]
+  state: CloudFunctionState
   createdAt: Date
   updatedAt: Date
   createdBy: string

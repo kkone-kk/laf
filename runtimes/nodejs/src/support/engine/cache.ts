@@ -1,4 +1,4 @@
-import { ICloudFunctionData } from './types'
+import { ICloudFunctionData, CloudFunctionState } from './types'
 import { logger } from '../logger'
 import { DatabaseAgent } from '../../db'
 import { CLOUD_FUNCTION_COLLECTION } from '../../constants'
@@ -6,12 +6,6 @@ import { InitHook } from '../init-hook'
 import { DatabaseChangeStream } from '../database-change-stream'
 import { FunctionModule } from './module'
 import { ChangeStreamDocument } from 'mongodb'
-
-// Define State Enum here or import if possible (but we are in runtime, shared entity might be tricky)
-enum CloudFunctionState {
-  Running = 'Running',
-  Stopped = 'Stopped',
-}
 
 export class FunctionCache {
   private static cache: Map<string, ICloudFunctionData> = new Map()
@@ -24,9 +18,7 @@ export class FunctionCache {
       .toArray()
 
     for (const func of funcs) {
-      // Filter by state. Default to Stopped if undefined? Or load all?
-      // User wants "Function Running" status.
-      if (func['state'] === CloudFunctionState.Running) {
+      if (func.state === CloudFunctionState.Running) {
          FunctionCache.cache.set(func.name, func)
       }
     }
@@ -54,7 +46,7 @@ export class FunctionCache {
         .collection<ICloudFunctionData>(CLOUD_FUNCTION_COLLECTION)
         .findOne({ _id: change.documentKey._id })
 
-      if (func['state'] === CloudFunctionState.Running) {
+      if (func && func.state === CloudFunctionState.Running) {
         FunctionCache.cache.set(func.name, func)
       }
 
@@ -63,12 +55,14 @@ export class FunctionCache {
         .collection<ICloudFunctionData>(CLOUD_FUNCTION_COLLECTION)
         .findOne({ _id: change.documentKey._id })
 
-      if (func['state'] === CloudFunctionState.Running) {
+      if (func && func.state === CloudFunctionState.Running) {
         FunctionCache.cache.set(func.name, func)
       } else {
-        // If updated to Stopped, remove it
-        FunctionModule.deleteCache()
-        FunctionCache.cache.delete(func.name)
+        // If updated to Stopped or something else, remove it
+        if (func) { // func exists but not running
+             FunctionModule.deleteCache()
+             FunctionCache.cache.delete(func.name)
+        }
       }
 
     } else if (change.operationType == 'delete') {
