@@ -6,6 +6,7 @@ import { UpdateDependencyDto } from './dto/update-dependency.dto'
 import { SystemDatabase } from 'src/system-database'
 import { ApplicationConfiguration } from 'src/application/entities/application-configuration'
 import { ApplicationConfigurationService } from 'src/application/configuration.service'
+import { ProcessManagerService } from 'src/local-cluster/process-manager.service'
 
 export class Dependency {
   name: string
@@ -19,7 +20,10 @@ export class DependencyService {
   private readonly logger = new Logger(DependencyService.name)
   private readonly db = SystemDatabase.db
 
-  constructor(private readonly confService: ApplicationConfigurationService) {}
+  constructor(
+    private readonly confService: ApplicationConfigurationService,
+    private readonly processManagerService: ProcessManagerService,
+  ) { }
 
   /**
    * Get app merged dependencies in `Dependency` array
@@ -62,6 +66,9 @@ export class DependencyService {
         { $set: { dependencies: deps, updatedAt: new Date() } },
       )
 
+    // Trigger runtime restart to install dependencies
+    await this.triggerRuntimeRestart()
+
     return true
   }
 
@@ -93,6 +100,9 @@ export class DependencyService {
         { $set: { dependencies: deps, updatedAt: new Date() } },
       )
 
+    // Trigger runtime restart to install dependencies
+    await this.triggerRuntimeRestart()
+
     return true
   }
 
@@ -111,6 +121,9 @@ export class DependencyService {
         { appid },
         { $set: { dependencies: filtered, updatedAt: new Date() } },
       )
+
+    // Trigger runtime restart to install dependencies
+    await this.triggerRuntimeRestart()
 
     return true
   }
@@ -144,6 +157,19 @@ export class DependencyService {
       return true
     } catch (error) {
       return false
+    }
+  }
+
+  /**
+   * Trigger runtime restart to install dependencies
+   * In local architecture, dependencies are installed when the shared runtime starts
+   */
+  private async triggerRuntimeRestart() {
+    try {
+      this.logger.log('Triggering runtime restart to install dependencies...')
+      await this.processManagerService.restartSharedRuntime()
+    } catch (error) {
+      this.logger.error('Failed to restart shared runtime', error)
     }
   }
 }

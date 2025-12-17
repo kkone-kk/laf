@@ -54,7 +54,7 @@ export class FunctionService {
       createdBy: userid,
       methods: dto.methods,
       tags: dto.tags || [],
-      state: FunctionState.STOPPED, // New functions start as STOPPED
+      state: FunctionState.RUNNING, // New functions start as RUNNING
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -141,6 +141,12 @@ export class FunctionService {
             { returnDocument: 'after' },
           )
 
+        // update state to RUNNING if it is not
+        if (fn.value.state !== FunctionState.RUNNING) {
+          await this.updateFunctionState(fn.value._id.toString(), FunctionState.RUNNING)
+          fn.value.state = FunctionState.RUNNING
+        }
+
         // publish
         await this.publish(fn.value, func.name)
 
@@ -190,6 +196,13 @@ export class FunctionService {
 
     const fn = await this.findOne(func.appid, func.name)
     await this.addOneHistoryRecord(fn, dto.changelog)
+
+    // update state to RUNNING if it is not
+    if (fn.state !== FunctionState.RUNNING) {
+      await this.updateFunctionState(fn._id.toString(), FunctionState.RUNNING)
+      fn.state = FunctionState.RUNNING
+    }
+
     await this.publish(fn)
 
     return fn
@@ -346,20 +359,6 @@ export class FunctionService {
       { secret: secret.value },
     )
     return token
-  }
-
-  /**
-   * Get the in-cluster url of runtime
-   * @param appid
-   * @returns
-   */
-  getInClusterRuntimeUrl(region: Region, appid: string) {
-    const serviceName = appid
-    const namespace = GetApplicationNamespace(region, appid)
-    const appAddress = `${serviceName}.${namespace}:8000`
-
-    const url = `http://${appAddress}`
-    return url
   }
 
   async getLogs(
