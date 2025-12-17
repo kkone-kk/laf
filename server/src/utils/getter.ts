@@ -8,16 +8,6 @@ import { IRequest } from './interface'
  * @returns
  */
 export function GetApplicationNamespace(region: Region, appid: string) {
-  const conf = region.namespaceConf
-  if (conf?.mode === ApplicationNamespaceMode.Fixed) {
-    return conf.fixed
-  }
-
-  if (conf?.mode === ApplicationNamespaceMode.AppId) {
-    const prefix = conf?.prefix || ''
-    return `${prefix}${appid}`
-  }
-
   return appid
 }
 
