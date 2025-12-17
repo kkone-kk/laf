@@ -179,7 +179,7 @@ export class ApplicationTaskService {
   /**
    * Phase `Created` -> `Starting`:
    * - move phase `Created` to `Starting`
-   * - set state to `Running`
+   * - DO NOT set state to `Running` automatically (let InstanceTaskService handle it)
    */
   async handleCreatedPhase() {
     const db = SystemDatabase.db
@@ -202,26 +202,31 @@ export class ApplicationTaskService {
 
     this.logger.log(`handleCreatedPhase matched app ${appid}, locked it`)
 
-    // update application phase to `Starting` and state to `Running`
+    // update application phase to `Starting` only
+    // DO NOT set state to Running - let InstanceTaskService handle state transitions
     await db.collection<Application>('Application').updateOne(
       { _id: app._id, phase: ApplicationPhase.Created },
       {
         $set: {
           phase: ApplicationPhase.Starting,
-          state: ApplicationState.Running,
           lockedAt: TASK_LOCK_INIT_TIME,
         },
       },
     )
 
-    this.logger.log('app phase updated to `Starting` and state to `Running`: ' + app.appid)
+    this.logger.log('app phase updated to `Starting`: ' + app.appid)
   }
 
   /**
    * Phase `Starting` -> `Started`:
    * - move phase `Starting` to `Started`
+   * NOTE: Temporarily disabled to let InstanceTaskService handle instance creation
    */
   async handleStartingPhase() {
+    // Disabled: Let InstanceTaskService handle the Starting -> Started transition
+    // after actually creating the instance process
+    return;
+
     const db = SystemDatabase.db
 
     const res = await db

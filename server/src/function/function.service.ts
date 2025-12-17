@@ -13,7 +13,7 @@ import { CompileFunctionDto } from './dto/compile-function.dto'
 import { DatabaseService } from 'src/database/database.service'
 import { SystemDatabase } from 'src/system-database'
 import { ClientSession, ObjectId } from 'mongodb'
-import { CloudFunction } from './entities/cloud-function'
+import { CloudFunction, FunctionState } from './entities/cloud-function'
 import { ApplicationConfiguration } from 'src/application/entities/application-configuration'
 import { CloudFunctionHistory } from './entities/cloud-function-history'
 import { TriggerService } from 'src/trigger/trigger.service'
@@ -25,6 +25,7 @@ import { RegionService } from 'src/region/region.service'
 import { GetApplicationNamespace } from 'src/utils/getter'
 import { Region } from 'src/region/entities/region'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
+import { firstValueFrom } from 'rxjs'
 
 @Injectable()
 export class FunctionService {
@@ -39,7 +40,7 @@ export class FunctionService {
     private readonly functionRecycleBinService: FunctionRecycleBinService,
     private readonly httpService: HttpService,
     private readonly regionService: RegionService,
-  ) {}
+  ) { }
   async create(appid: string, userid: ObjectId, dto: CreateFunctionDto) {
     await this.db.collection<CloudFunction>('CloudFunction').insertOne({
       appid,
@@ -53,6 +54,7 @@ export class FunctionService {
       createdBy: userid,
       methods: dto.methods,
       tags: dto.tags || [],
+      state: FunctionState.STOPPED, // New functions start as STOPPED
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -85,6 +87,30 @@ export class FunctionService {
     const res = await this.db
       .collection<CloudFunction>('CloudFunction')
       .findOne({ appid, name })
+
+    return res
+  }
+
+  async findById(functionId: string) {
+    const res = await this.db
+      .collection<CloudFunction>('CloudFunction')
+      .findOne({ _id: new ObjectId(functionId) })
+
+    return res
+  }
+
+  async updateFunctionState(functionId: string, state: FunctionState) {
+    const res = await this.db
+      .collection<CloudFunction>('CloudFunction')
+      .updateOne(
+        { _id: new ObjectId(functionId) },
+        {
+          $set: {
+            state,
+            updatedAt: new Date(),
+          },
+        },
+      )
 
     return res
   }
@@ -135,10 +161,7 @@ export class FunctionService {
             createdAt: new Date(doc.createdAt),
             updatedAt: new Date(),
           }))
-          await this.triggerService.removeAllByTarget(
-            func.appid,
-            func.name,
-          )
+          await this.triggerService.removeAllByTarget(func.appid, func.name)
           await this.triggerService.createMany(triggersToInsert)
         }
         return fn.value
@@ -229,6 +252,9 @@ export class FunctionService {
         name: oldFuncName ? oldFuncName : func.name,
       })
       await coll.insertOne(func)
+
+      // 刷新运行时缓存（本地单设备模式）
+      await this.refreshRuntimeCache(func.name, 'published')
     } finally {
       await client.close()
     }
@@ -270,6 +296,9 @@ export class FunctionService {
     try {
       const coll = db.collection(CN_PUBLISHED_FUNCTIONS)
       await coll.deleteOne({ name })
+
+      // 刷新运行时缓存（本地单设备模式）
+      await this.refreshRuntimeCache(name, 'unpublished')
     } finally {
       await client.close()
     }
@@ -414,5 +443,61 @@ export class FunctionService {
         appid,
       })
     return res
+  }
+
+  /**
+   * 刷新运行时缓存（本地单设备模式）
+   * 适用于本地开发环境，直接调用运行时的缓存刷新API
+   */
+  private async refreshRuntimeCache(
+    functionName: string,
+    action: 'published' | 'unpublished',
+  ): Promise<void> {
+    try {
+      // 本地单设备模式下的运行时端口
+      const runtimePorts = [8000, 8001, 8002]
+
+      this.logger.log(
+        `Function ${functionName} ${action}, refreshing runtime cache...`,
+      )
+
+      for (const port of runtimePorts) {
+        try {
+          const response = await firstValueFrom(
+            this.httpService.post(
+              `http://localhost:${port}/_/refresh-cache`,
+              {},
+              {
+                timeout: 5000,
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              },
+            ),
+          )
+
+          if (response.status === 200) {
+            this.logger.log(
+              `Runtime cache refreshed successfully on port ${port} for function ${functionName}`,
+            )
+            return // 成功刷新一个运行时就足够了
+          }
+        } catch (error) {
+          this.logger.debug(
+            `Failed to refresh cache on port ${port}: ${error.message}`,
+          )
+          continue
+        }
+      }
+
+      this.logger.warn(
+        `Failed to refresh runtime cache for function ${functionName} on all ports`,
+      )
+    } catch (error) {
+      this.logger.error(
+        `Error refreshing runtime cache for function ${functionName}:`,
+        error,
+      )
+    }
   }
 }

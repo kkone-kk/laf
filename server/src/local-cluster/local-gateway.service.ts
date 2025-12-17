@@ -20,29 +20,48 @@ export class LocalGatewayService implements OnModuleInit {
     startProxyServer() {
         this.app = express()
 
-        // Proxy for runtime
+        // Proxy for shared runtime - all requests go to the shared runtime
         this.app.use((req, res, next) => {
             const host = req.hostname
-            // Assuming host is like appid.127.0.0.1.nip.io or appid.localhost
-            const appid = host.split('.')[0]
+            const path = req.path
 
-            this.logger.log(`Incoming request: host=${host}, appid=${appid}, path=${req.path}`)
+            this.logger.log(`Incoming request: host=${host}, path=${path}`)
 
-            const port = this.processManager.getPort(appid)
+            // Extract appid from host (appid.127.0.0.1.nip.io or appid.localhost)
+            let appid: string | null = null
+            if (host) {
+                appid = host.split('.')[0]
+            }
 
-            if (port) {
-                this.logger.log(`Proxying request for ${host} to localhost:${port}`)
-                createProxyMiddleware({
-                    target: `http://localhost:${port}`,
+            // Get shared runtime port
+            const sharedRuntimePort = this.processManager.getSharedRuntimePort()
+
+            if (this.processManager.isSharedRuntimeRunning()) {
+                this.logger.log(`Proxying request to shared runtime on localhost:${sharedRuntimePort}`)
+
+                // Add appid to headers so the shared runtime knows which app this is for
+                const proxyMiddleware = createProxyMiddleware({
+                    target: `http://localhost:${sharedRuntimePort}`,
                     changeOrigin: true,
                     ws: true,
+                    onProxyReq: (proxyReq: any, req: any, res: any) => {
+                        // Add appid header for the shared runtime
+                        if (appid) {
+                            proxyReq.setHeader('x-laf-appid', appid)
+                        }
+                    },
                     logger: console
-                })(req, res, next)
+                } as any)
+
+                proxyMiddleware(req, res, next)
+                return
             } else {
-                // Check if it is a website hosting request (not implemented yet)
-                // or just 404
-                this.logger.warn(`No process found for ${appid} (host: ${host})`)
-                next()
+                this.logger.warn(`Shared runtime is not running`)
+                res.status(503).json({
+                    error: 'Shared runtime is not available',
+                    message: 'Please ensure the runtime is started'
+                })
+                return
             }
         })
 
@@ -61,18 +80,32 @@ export class LocalGatewayService implements OnModuleInit {
                     socket.destroy()
                     return
                 }
+
                 const hostname = host.split(':')[0]
                 const appid = hostname.split('.')[0]
-                const port = this.processManager.getPort(appid)
 
-                if (port) {
-                    createProxyMiddleware({
-                        target: `http://localhost:${port}`,
+                // WebSocket upgrade to shared runtime
+                const sharedRuntimePort = this.processManager.getSharedRuntimePort()
+
+                if (this.processManager.isSharedRuntimeRunning()) {
+                    this.logger.log(`WebSocket upgrade to shared runtime on localhost:${sharedRuntimePort}`)
+
+                    const proxyMiddleware = createProxyMiddleware({
+                        target: `http://localhost:${sharedRuntimePort}`,
                         changeOrigin: true,
                         ws: true,
+                        onProxyReqWs: (proxyReq: any, req: any, socket: any) => {
+                            // Add appid header for WebSocket connections
+                            if (appid) {
+                                proxyReq.setHeader('x-laf-appid', appid)
+                            }
+                        },
                         logger: console
-                    }).upgrade(req, socket as any, head)
+                    } as any)
+
+                    proxyMiddleware.upgrade(req, socket as any, head)
                 } else {
+                    this.logger.warn(`Shared runtime is not running for WebSocket upgrade`)
                     socket.destroy()
                 }
             })

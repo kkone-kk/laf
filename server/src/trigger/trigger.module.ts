@@ -14,9 +14,10 @@ import { BundleService } from 'src/application/bundle.service'
 import { FunctionRecycleBinService } from 'src/recycle-bin/cloud-function/function-recycle-bin.service'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
 import { LocalClusterModule } from 'src/local-cluster/local-cluster.module'
+import { FunctionModule } from 'src/function/function.module'
 
 @Module({
-  imports: [StorageModule, HttpModule, LocalClusterModule],
+  imports: [StorageModule, HttpModule, LocalClusterModule, FunctionModule],
   controllers: [TriggerController],
   providers: [
     TriggerService,
@@ -25,7 +26,6 @@ import { LocalClusterModule } from 'src/local-cluster/local-cluster.module'
     FunctionRecycleBinService,
     CronJobService,
     TriggerTaskService,
-    FunctionService,
     DatabaseService,
     DedicatedDatabaseService,
     MongoService,
@@ -33,4 +33,4 @@ import { LocalClusterModule } from 'src/local-cluster/local-cluster.module'
   ],
   exports: [TriggerService, CronJobService],
 })
-export class TriggerModule {}
+export class TriggerModule { }

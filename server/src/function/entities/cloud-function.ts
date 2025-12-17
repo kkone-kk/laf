@@ -30,6 +30,11 @@ export enum HttpMethod {
   HEAD = 'HEAD',
 }
 
+export enum FunctionState {
+  RUNNING = 'RUNNING',
+  STOPPED = 'STOPPED',
+}
+
 export class CloudFunction {
   @ApiProperty({ type: String })
   _id?: ObjectId
@@ -54,6 +59,12 @@ export class CloudFunction {
 
   @ApiPropertyOptional()
   params?: any
+
+  @ApiPropertyOptional()
+  environments?: Record<string, string>
+
+  @ApiProperty({ enum: FunctionState })
+  state: FunctionState
 
   @ApiProperty()
   createdAt: Date

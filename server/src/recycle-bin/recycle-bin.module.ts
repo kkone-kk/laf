@@ -10,9 +10,10 @@ import { RegionService } from 'src/region/region.service'
 import { ApplicationService } from 'src/application/application.service'
 import { HttpModule } from '@nestjs/axios'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
+import { FunctionModule } from 'src/function/function.module'
 
 @Module({
-  imports: [HttpModule],
+  imports: [HttpModule, FunctionModule],
   controllers: [FunctionRecycleBinController],
   providers: [
     ApplicationService,
@@ -21,10 +22,9 @@ import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedica
     JwtService,
     TriggerService,
     FunctionRecycleBinService,
-    FunctionService,
     MongoService,
     RegionService,
   ],
   exports: [FunctionRecycleBinService],
 })
-export class RecycleBinModule {}
+export class RecycleBinModule { }

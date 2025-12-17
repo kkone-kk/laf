@@ -38,8 +38,8 @@ globalThis.createCloudSdk = createCloudSdk
 
 const app = express()
 
-DatabaseAgent.ready.then(() => {
-  DatabaseChangeStream.initialize()
+DatabaseAgent.ready.then(async () => {
+  await DatabaseChangeStream.initialize()
 })
 
 app.use(
@@ -99,9 +99,22 @@ app.use(function (req, res, next) {
 
 app.use(router)
 
+// Prevent multiple instances from starting on the same port
 const server = app.listen(Config.PORT, () =>
   logger.info(`server ${process.pid} listened on ${Config.PORT}`),
 )
+
+server.on('error', (error: any) => {
+  if (error.code === 'EADDRINUSE') {
+    logger.warn(
+      `Port ${Config.PORT} is already in use, runtime may already be running`,
+    )
+    process.exit(0) // Exit gracefully if port is in use
+  } else {
+    logger.error('Server error:', error)
+    process.exit(1)
+  }
+})
 
 // set keepAliveTimeout from config (default 60 seconds)
 server.keepAliveTimeout = Config.KEEP_ALIVE_TIMEOUT

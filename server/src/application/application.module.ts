@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { ApplicationController } from './application.controller'
 import { ApplicationService } from './application.service'
 import { ApplicationTaskService } from './application-task.service'
@@ -24,6 +24,7 @@ import { PodService } from './pod.service'
 import { PodController } from './pod.controller'
 import { LocalClusterModule } from 'src/local-cluster/local-cluster.module'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
+import { FunctionModule } from 'src/function/function.module'
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedica
     AccountModule,
     HttpModule,
     LocalClusterModule,
+    forwardRef(() => FunctionModule),
   ],
   controllers: [
     ApplicationController,
@@ -45,7 +47,6 @@ import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedica
     InstanceService,
     FunctionRecycleBinService,
     JwtService,
-    FunctionService,
     EnvironmentVariableService,
     ApplicationConfigurationService,
     TriggerService,
@@ -65,4 +66,4 @@ import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedica
     PodService,
   ],
 })
-export class ApplicationModule {}
+export class ApplicationModule { }

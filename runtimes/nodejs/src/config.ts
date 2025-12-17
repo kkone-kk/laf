@@ -63,7 +63,12 @@ export default class Config {
   }
 
   static get STORAGE_PORT(): number {
-    return (process.env.__STORAGE_PORT ?? 9000) as number
+    const basePort = (process.env.__STORAGE_PORT ?? 9002) as number
+    // If running in shared runtime mode, use a different port to avoid conflicts
+    if (process.env.__SHARED_RUNTIME === 'true') {
+      return basePort + 10 // Use 9012 instead of 9002 for shared runtime
+    }
+    return basePort
   }
 
   // set keepAliveTimeout from config (default 60 seconds)

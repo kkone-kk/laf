@@ -15,6 +15,7 @@ import { generateUUID } from '../support/utils'
 import { handleInvokeFunction } from './invoke'
 import { DatabaseAgent } from '../db'
 import { handleOpenAPIDefinition } from './openapi'
+import { FunctionCache } from '../support/engine'
 
 /**
  * multer uploader config
@@ -44,6 +45,18 @@ router.get('/_/healthz', (_req, res) => {
     res.status(200).send('ok')
   } else {
     res.status(503).send('db is not ready')
+  }
+})
+
+// Add cache refresh endpoint
+router.post('/_/refresh-cache', async (_req, res) => {
+  try {
+    await FunctionCache.initialize()
+    res.status(200).json({ message: 'Cache refreshed successfully' })
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: 'Failed to refresh cache', details: error.message })
   }
 })
 router.get('/_/api-docs', handleOpenAPIDefinition)

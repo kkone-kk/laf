@@ -25,7 +25,7 @@ export class BillingCreationTaskService {
   constructor(
     private readonly billing: BillingService,
     private readonly bundleService: BundleService,
-  ) {}
+  ) { }
 
   @Cron(CronExpression.EVERY_MINUTE)
   async tick() {
@@ -227,8 +227,7 @@ export class BillingCreationTaskService {
       }
 
       this.logger.log(
-        `Billing creation complete for application: ${appid} from ${startAt.toISOString()} to ${nextMeteringTime.toISOString()} for billing ${
-          inserted.insertedId
+        `Billing creation complete for application: ${appid} from ${startAt.toISOString()} to ${nextMeteringTime.toISOString()} for billing ${inserted.insertedId
         }`,
       )
       return billingTime

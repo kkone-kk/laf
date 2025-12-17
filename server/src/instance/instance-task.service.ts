@@ -29,7 +29,7 @@ export class InstanceTaskService {
   constructor(
     private readonly instanceService: InstanceService,
     private readonly dedicatedDatabaseService: DedicatedDatabaseService,
-  ) {}
+  ) { }
 
   @Cron(CronExpression.EVERY_SECOND)
   async tick() {
@@ -70,15 +70,17 @@ export class InstanceTaskService {
 
   /**
    * State `Running`:
-   * - move phase `Created` or `Stopped` to `Starting`
+   * - move phase `Stopped` to `Starting` (but NOT `Created` - let ApplicationTaskService handle that)
    */
   async handleRunningState() {
     const db = SystemDatabase.db
 
+    // Only handle Stopped -> Starting transition
+    // ApplicationTaskService handles Created -> Starting transition
     await db.collection<Application>('Application').updateMany(
       {
         state: ApplicationState.Running,
-        phase: { $in: [ApplicationPhase.Created, ApplicationPhase.Stopped] },
+        phase: ApplicationPhase.Stopped,
         lockedAt: { $lt: new Date(Date.now() - 1000 * this.lockTimeout) },
       },
       {
@@ -171,27 +173,15 @@ export class InstanceTaskService {
       }
     }
 
-    // create instance
+    // create instance (in shared runtime mode, this ensures shared runtime is running)
     await this.instanceService.create(app.appid)
 
     const instance = await this.instanceService.get(appid)
-    const unavailable =
-      instance.deployment?.status?.unavailableReplicas || false
-    if (unavailable) {
-      await this.relock(appid, waitingTime)
-      return
-    }
 
-    const available = isConditionTrue(
-      'Available',
-      instance.deployment?.status?.conditions || [],
-    )
-    if (!available) {
-      await this.relock(appid, waitingTime)
-      return
-    }
-
-    if (!instance.service) {
+    // In shared runtime mode, we check if the shared runtime is available
+    // instead of checking individual deployment status
+    if (!instance.deployment || !instance.service) {
+      // Shared runtime is not available, relock and try again
       await this.relock(appid, waitingTime)
       return
     }
@@ -228,9 +218,12 @@ export class InstanceTaskService {
         { $set: { state: TriggerState.Active, updatedAt: new Date() } },
       )
 
-    // if state is `Restarting`, update state to `Running` with phase `Started`
+    // Determine the target state based on current state
     let toState = app.state
     if (app.state === ApplicationState.Restarting) {
+      toState = ApplicationState.Running
+    } else if (!app.state || app.state === ApplicationState.Stopped) {
+      // If no state is set or it's stopped, set it to Running
       toState = ApplicationState.Running
     }
 
@@ -330,20 +323,9 @@ export class InstanceTaskService {
         { $set: { state: TriggerState.Inactive, updatedAt: new Date() } },
       )
 
-    // check if the instance is removed
-    const instance = await this.instanceService.get(app.appid)
-    if (instance.deployment) {
-      await this.instanceService.remove(app.appid)
-      await this.relock(appid, waitingTime)
-      return
-    }
-
-    // check if the service is removed
-    if (instance.service) {
-      await this.instanceService.remove(app.appid)
-      await this.relock(appid, waitingTime)
-      return
-    }
+    // In shared runtime mode, we don't need to wait for individual instances to be removed
+    // The shared runtime continues running and handles app lifecycle internally
+    await this.instanceService.remove(app.appid)
 
     const ddb = await this.dedicatedDatabaseService.findOne(appid)
 

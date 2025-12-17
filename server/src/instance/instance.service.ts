@@ -23,99 +23,53 @@ export class InstanceService {
     private readonly applicationService: ApplicationService,
     private readonly cloudbin: CloudBinBucketService,
     private readonly processManager: ProcessManagerService,
-  ) {}
+  ) { }
 
   public async create(appid: string) {
+    this.logger.log(`Creating instance for app ${appid} (shared runtime mode)`)
     const app = await this.applicationService.findOneUnsafe(appid)
-    await this.createProcess(app)
+
+    // In shared runtime mode, we just ensure the shared runtime is running
+    // and prepare the environment for the app
+    await this.prepareSharedRuntimeEnvironment(app)
   }
 
   public async remove(appid: string) {
-    await this.processManager.stopProcess(appid)
-    this.logger.log(`remove process ${appid}`)
+    this.logger.log(`Removing instance for app ${appid} (shared runtime mode)`)
+    // In shared runtime mode, we don't stop the shared runtime for individual apps
+    // The shared runtime continues running and will handle app-specific cleanup
   }
 
   public async get(appid: string) {
     const app = await this.applicationService.findOneUnsafe(appid)
-    const process = this.processManager.getProcess(appid)
-    // mock deployment/service/hpa structure to satisfy return type if needed,
-    // or better yet, refactor the caller to not expect k8s objects.
-    // For now, returning nulls but with app
+    const sharedRuntimeRunning = this.processManager.isSharedRuntimeRunning()
 
-    // We return a structure that mimics what was returned before but with nulls for k8s objects
-    // If callers depend on these objects, we might need to mock them more convincingly or change the callers.
-    return { deployment: process ? {} as any : null, service: process ? {} as any : null, hpa: null, app }
+    // Return a structure that indicates the app is "deployed" if shared runtime is running
+    return {
+      deployment: sharedRuntimeRunning ? { status: { readyReplicas: 1, unavailableReplicas: 0 } } : null,
+      service: sharedRuntimeRunning ? { spec: { ports: [{ port: this.processManager.getSharedRuntimePort() }] } } : null,
+      hpa: null,
+      app
+    }
   }
 
   public async restart(appid: string) {
-    await this.remove(appid)
-    await this.create(appid)
+    this.logger.log(`Restarting instance for app ${appid} (shared runtime mode)`)
+    // In shared runtime mode, we restart the shared runtime instead of individual apps
+    await this.processManager.restartSharedRuntime()
   }
 
-  private async createProcess(app: ApplicationWithRelations) {
+  private async prepareSharedRuntimeEnvironment(app: ApplicationWithRelations) {
     const appid = app.appid
-    const region = app.region
-    assert(region, 'region is required')
+    this.logger.log(`Preparing shared runtime environment for app ${appid}`)
 
-    // prepare params
-    const limitMemory = app.bundle.resource.limitMemory
-    const max_old_space_size = ~~(limitMemory * 0.8)
-    const max_http_header_size = 1 * MB
-    const dependencies = app.configuration?.dependencies || []
-    const dependencies_string = dependencies.join(' ')
-    const npm_install_flags = region.clusterConf.npmInstallFlags || ''
+    // In shared runtime mode, we just ensure the shared runtime is running
+    // The runtime will handle app-specific configuration through database queries
+    await this.processManager.ensureSharedRuntimeRunning()
 
-    // db connection uri
-    let dbConnectionUri: string
-    const dedicatedDatabase = await this.dedicatedDatabaseService.findOne(appid)
-    if (dedicatedDatabase) {
-      // Logic for dedicated database might need adjustment for local,
-      // but assuming it returns a valid connection string for now.
-       dbConnectionUri = await this.dedicatedDatabaseService.getConnectionUri(
-        region,
-        dedicatedDatabase,
-      )
-    } else {
-      const database = await this.databaseService.findOne(appid)
-      // Assuming getInternalConnectionUri returns a valid URI reachable from localhost
-      dbConnectionUri = this.databaseService.getInternalConnectionUri(
-        region,
-        database,
-      )
-    }
-
-    const storage = await this.storageService.findOne(appid)
-    const NODE_MODULES_PUSH_URL =
-      await this.cloudbin.getNodeModulesCachePushUrl(appid)
-
-    const NODE_MODULES_PULL_URL =
-      await this.cloudbin.getNodeModulesCachePullUrl(appid)
-
-    const env = {
-      DB_URI: dbConnectionUri,
-      APP_ID: appid,
-      APPID: appid,
-      OSS_ACCESS_KEY: storage.accessKey,
-      OSS_ACCESS_SECRET: storage.secretKey,
-      OSS_INTERNAL_ENDPOINT: region.storageConf.internalEndpoint,
-      OSS_EXTERNAL_ENDPOINT: region.storageConf.externalEndpoint,
-      OSS_REGION: region.name,
-      FLAGS: `--max_old_space_size=${max_old_space_size} --max-http-header-size=${max_http_header_size}`,
-      DEPENDENCIES: dependencies_string,
-      NODE_MODULES_PUSH_URL: NODE_MODULES_PUSH_URL,
-      NODE_MODULES_PULL_URL: NODE_MODULES_PULL_URL,
-      NPM_INSTALL_FLAGS: npm_install_flags,
-      CUSTOM_DEPENDENCY_BASE_PATH: ServerConfig.RUNTIME_CUSTOM_DEPENDENCY_BASE_PATH,
-      RESTART_AT: new Date().getTime().toString(),
-    }
-
-    // merge env from app configuration, override if exists
-    const extraEnv = app.configuration.environments || []
-    extraEnv.forEach((e) => {
-      env[e.name] = e.value
-    })
-
-    await this.processManager.startProcess(appid, env)
+    // The shared runtime will read app configuration from the database
+    // No need to pass environment variables per app
+    this.logger.log(`Shared runtime environment prepared for app ${appid}`)
   }
 
 }

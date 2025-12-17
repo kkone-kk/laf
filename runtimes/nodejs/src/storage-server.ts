@@ -9,10 +9,10 @@ const tryPath = (bucket: string, path: string): string[] => {
   return path.endsWith('/')
     ? [`/${bucket}${path}index.html`, `/${bucket}/index.html`]
     : [
-        `/${bucket}${path}`,
-        `/${bucket}${path}/index.html`,
-        `/${bucket}/index.html`,
-      ]
+      `/${bucket}${path}`,
+      `/${bucket}${path}/index.html`,
+      `/${bucket}/index.html`,
+    ]
 }
 
 const websiteHostingPathHandler = async (
@@ -135,6 +135,16 @@ storageServer.listen(Config.STORAGE_PORT, () => {
   logger.info(
     `Storage server ${process.pid} listened on ${Config.STORAGE_PORT}`,
   )
+})
+
+storageServer.on('error', (error: any) => {
+  if (error.code === 'EADDRINUSE') {
+    logger.warn(`Storage port ${Config.STORAGE_PORT} is already in use, storage server may already be running`)
+    process.exit(0) // Exit gracefully if port is in use
+  } else {
+    logger.error('Storage server error:', error)
+    process.exit(1)
+  }
 })
 
 export default storageServer
