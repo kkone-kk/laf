@@ -6,10 +6,8 @@ import {
   Patch,
   Param,
   Delete,
-  UseGuards,
   HttpException,
   HttpStatus,
-  Req,
 } from '@nestjs/common'
 import { CreateFunctionDto } from './dto/create-function.dto'
 import { UpdateFunctionDto } from './dto/update-function.dto'
@@ -20,18 +18,14 @@ import {
 } from '../utils/response'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
 import { FunctionService } from './function.service'
-import { IRequest } from '../utils/interface'
 import { CompileFunctionDto } from './dto/compile-function.dto'
 import { BundleService } from 'src/application/bundle.service'
 import { I18n, I18nContext, I18nService } from 'nestjs-i18n'
 import { I18nTranslations } from '../generated/i18n.generated'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 import { CloudFunctionHistory } from './entities/cloud-function-history'
 import { CloudFunction } from './entities/cloud-function'
 import { UpdateFunctionDebugDto } from './dto/update-function-debug.dto'
-import { FunctionRecycleBinService } from 'src/recycle-bin/cloud-function/function-recycle-bin.service'
-import { STORAGE_LIMIT } from 'src/constants'
+import { DEFAULT_USER_ID } from 'src/constants'
 
 @ApiTags('Function')
 @ApiBearerAuth('Authorization')
@@ -40,7 +34,6 @@ export class FunctionController {
   constructor(
     private readonly functionsService: FunctionService,
     private readonly bundleService: BundleService,
-    private readonly functionRecycleBinService: FunctionRecycleBinService,
     private readonly i18n: I18nService<I18nTranslations>,
   ) {}
 
@@ -51,12 +44,10 @@ export class FunctionController {
    */
   @ApiResponseObject(CloudFunction)
   @ApiOperation({ summary: 'Create a new function' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post()
   async create(
     @Param('appid') appid: string,
     @Body() dto: CreateFunctionDto,
-    @Req() req: IRequest,
     @I18n() i18n: I18nContext<I18nTranslations>,
   ) {
     const error = dto.validate()
@@ -84,7 +75,11 @@ export class FunctionController {
       )
     }
 
-    const res = await this.functionsService.create(appid, req.user._id, dto)
+    const res = await this.functionsService.create(
+      appid,
+      DEFAULT_USER_ID,
+      dto,
+    )
     if (!res) {
       return ResponseUtil.error(i18n.t('function.create.error'))
     }
@@ -97,7 +92,6 @@ export class FunctionController {
    */
   @ApiResponseArray(CloudFunction)
   @ApiOperation({ summary: 'Query function list of an app' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get()
   async findAll(@Param('appid') appid: string) {
     const data = await this.functionsService.findAll(appid)
@@ -111,7 +105,6 @@ export class FunctionController {
    */
   @ApiResponseObject(CloudFunction)
   @ApiOperation({ summary: 'Get a function by its name' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get(':name')
   async findOne(
     @Param('appid') appid: string,
@@ -137,7 +130,6 @@ export class FunctionController {
    */
   @ApiResponseObject(CloudFunction)
   @ApiOperation({ summary: 'Update function debug info' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':name/debug/params')
   async updateDebug(
     @Param('appid') appid: string,
@@ -169,7 +161,6 @@ export class FunctionController {
    */
   @ApiResponseObject(CloudFunction)
   @ApiOperation({ summary: 'Update a function' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':name')
   async update(
     @Param('appid') appid: string,
@@ -203,7 +194,6 @@ export class FunctionController {
    */
   @ApiResponseObject(CloudFunction)
   @ApiOperation({ summary: 'Delete a function' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete(':name')
   async remove(
     @Param('appid') appid: string,
@@ -216,12 +206,6 @@ export class FunctionController {
         i18n.t('function.common.notFound', { args: { name } }),
         HttpStatus.NOT_FOUND,
       )
-    }
-    const recycleBinStorage =
-      await this.functionRecycleBinService.getRecycleBinStorage(appid)
-
-    if (recycleBinStorage >= STORAGE_LIMIT) {
-      return ResponseUtil.error('Recycle bin is full, please free up space')
     }
 
     const res = await this.functionsService.removeOne(func)
@@ -239,7 +223,6 @@ export class FunctionController {
    */
   @ApiResponseObject(CloudFunction)
   @ApiOperation({ summary: 'Compile a function ' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post(':name/compile')
   async compile(
     @Param('appid') appid: string,
@@ -268,7 +251,6 @@ export class FunctionController {
    */
   @ApiResponseArray(CloudFunctionHistory)
   @ApiOperation({ summary: 'Get cloud function history' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get(':name/history')
   async getHistory(
     @Param('appid') appid: string,
