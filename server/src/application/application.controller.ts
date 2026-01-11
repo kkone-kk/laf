@@ -105,11 +105,6 @@ export class ApplicationController {
       return ResponseUtil.error('dedicated database is not enabled')
     }
 
-    const checkSpec = await this.checkResourceSpecification(dto, regionId)
-    if (!checkSpec) {
-      return ResponseUtil.error('invalid resource specification')
-    }
-
     // create application
     const appid = await this.application.tryGenerateUniqueAppid()
     await this.application.create(
@@ -303,11 +298,6 @@ export class ApplicationController {
       (origin.resource.databaseCapacity && dto.dedicatedDatabase?.cpu)
     ) {
       return ResponseUtil.error('cannot change database type')
-    }
-
-    const checkSpec = await this.checkResourceSpecification(dto, regionId, app)
-    if (!checkSpec) {
-      return ResponseUtil.error('invalid resource specification')
     }
 
     // Check if user is trying to change dedicated database resources
@@ -508,130 +498,4 @@ export class ApplicationController {
     return ResponseUtil.ok(doc)
   }
 
-  private async checkResourceSpecification(
-    dto: UpdateApplicationBundleDto,
-    regionId: ObjectId,
-    app?: ApplicationWithRelations,
-  ) {
-    const resourceOptions = await this.resource.findAllByRegionId(regionId)
-
-    if (app) {
-      const checkSpec = resourceOptions.every((option) => {
-        switch (option.type) {
-          case 'cpu':
-            return (
-              option.specs.some((spec) => spec.value === dto.cpu) ||
-              app.bundle.resource.limitCPU === dto.cpu
-            )
-          case 'memory':
-            return (
-              option.specs.some((spec) => spec.value === dto.memory) ||
-              app.bundle.resource.limitMemory === dto.memory
-            )
-          case 'databaseCapacity':
-            if (!dto.databaseCapacity) return true
-            return (
-              option.specs.some(
-                (spec) => spec.value === dto.databaseCapacity,
-              ) || app.bundle.resource.databaseCapacity === dto.databaseCapacity
-            )
-          case 'storageCapacity':
-            if (!dto.storageCapacity) return true
-            return (
-              option.specs.some((spec) => spec.value === dto.storageCapacity) ||
-              app.bundle.resource.storageCapacity === dto.storageCapacity
-            )
-          // dedicated database
-          case 'dedicatedDatabaseCPU':
-            return (
-              !dto.dedicatedDatabase?.cpu ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.cpu,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.limitCPU ===
-                dto.dedicatedDatabase.cpu
-            )
-          case 'dedicatedDatabaseMemory':
-            return (
-              !dto.dedicatedDatabase?.memory ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.memory,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.limitMemory ===
-                dto.dedicatedDatabase.memory
-            )
-          case 'dedicatedDatabaseCapacity':
-            return (
-              !dto.dedicatedDatabase?.capacity ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.capacity,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.capacity ===
-                dto.dedicatedDatabase.capacity
-            )
-          case 'dedicatedDatabaseReplicas':
-            return (
-              !dto.dedicatedDatabase?.replicas ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.replicas,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.replicas ===
-                dto.dedicatedDatabase.replicas
-            )
-          default:
-            return true
-        }
-      })
-      return checkSpec
-    }
-
-    const checkSpec = resourceOptions.every((option) => {
-      switch (option.type) {
-        case 'cpu':
-          return option.specs.some((spec) => spec.value === dto.cpu)
-        case 'memory':
-          return option.specs.some((spec) => spec.value === dto.memory)
-        case 'databaseCapacity':
-          if (!dto.databaseCapacity) return true
-          return option.specs.some(
-            (spec) => spec.value === dto.databaseCapacity,
-          )
-        case 'storageCapacity':
-          return option.specs.some((spec) => spec.value === dto.storageCapacity)
-        // dedicated database
-        case 'dedicatedDatabaseCPU':
-          return (
-            !dto.dedicatedDatabase?.cpu ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.cpu,
-            )
-          )
-        case 'dedicatedDatabaseMemory':
-          return (
-            !dto.dedicatedDatabase?.memory ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.memory,
-            )
-          )
-        case 'dedicatedDatabaseCapacity':
-          return (
-            !dto.dedicatedDatabase?.capacity ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.capacity,
-            )
-          )
-        case 'dedicatedDatabaseReplicas':
-          return (
-            !dto.dedicatedDatabase?.replicas ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.replicas,
-            )
-          )
-        default:
-          return true
-      }
-    })
-
-    return checkSpec
-  }
 }

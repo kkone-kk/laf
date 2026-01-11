@@ -8,7 +8,6 @@ import {
   ParseArrayPipe,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common'
 import {
   ApiBearerAuth,
@@ -17,8 +16,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
 import { ResponseUtil } from 'src/utils/response'
 import { EnvironmentVariableService } from './environment.service'
 import { CreateEnvironmentDto } from './dto/create-env.dto'
@@ -40,7 +37,6 @@ export class EnvironmentVariableController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Update environment variables (replace all)' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post()
   @ApiBody({
     type: [CreateEnvironmentDto],
@@ -69,7 +65,6 @@ export class EnvironmentVariableController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Set a environment variable (create/update)' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch()
   async add(@Param('appid') appid: string, @Body() dto: CreateEnvironmentDto) {
     // can not set empty app secret
@@ -88,7 +83,6 @@ export class EnvironmentVariableController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Get environment variables' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get()
   async get(@Param('appid') appid: string) {
     const res = await this.confService.findAll(appid)
@@ -103,7 +97,6 @@ export class EnvironmentVariableController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Delete an environment variable by name' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete(':name')
   async delete(@Param('appid') appid: string, @Param('name') name: string) {
     // can not delete secret key

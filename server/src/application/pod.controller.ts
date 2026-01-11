@@ -4,11 +4,8 @@ import {
   Logger,
   Param,
   Query,
-  UseGuards,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
 import { ApiResponseObject, ResponseUtil } from 'src/utils/response'
 import { ContainerNameListDto, PodNameListDto } from './dto/pod.dto'
 import { PodService } from './pod.service'
@@ -28,7 +25,6 @@ export class PodController {
    */
   @ApiResponseObject(PodNameListDto)
   @ApiOperation({ summary: 'Get app all pod name' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get()
   async getPodNameList(@Param('appid') appid: string) {
     const podNames: PodNameListDto =
@@ -43,7 +39,6 @@ export class PodController {
    */
   @ApiResponseObject(ContainerNameListDto)
   @ApiOperation({ summary: "Get pod's containers" })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get('container')
   async getContainerNameList(
     @Param('appid') appid: string,

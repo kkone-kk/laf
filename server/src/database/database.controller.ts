@@ -6,7 +6,6 @@ import {
   Post,
   Req,
   Res,
-  UseGuards,
   Put,
   StreamableFile,
   UploadedFile,
@@ -21,8 +20,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger'
 import { Policy, Proxy } from 'database-proxy/dist'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
 import { IRequest, IResponse } from 'src/utils/interface'
 import { DatabaseService } from './database.service'
 import * as path from 'path'
@@ -32,10 +29,8 @@ import { unlink, writeFile } from 'node:fs/promises'
 import * as os from 'os'
 import { ResponseUtil } from 'src/utils/response'
 import { ImportDatabaseDto } from './dto/import-database.dto'
-import { InjectUser } from 'src/utils/decorator'
-import { User } from 'src/user/entities/user'
-import { QuotaService } from 'src/user/quota.service'
 import { DedicatedDatabaseService } from './dedicated-database/dedicated-database.service'
+import { DEFAULT_USER_ID } from 'src/constants'
 
 @ApiTags('Database')
 @ApiBearerAuth('Authorization')
@@ -45,7 +40,6 @@ export class DatabaseController {
 
   constructor(
     private readonly dbService: DatabaseService,
-    private readonly quotaService: QuotaService,
     private readonly dedicatedDatabaseService: DedicatedDatabaseService,
   ) {}
 
@@ -55,7 +49,6 @@ export class DatabaseController {
    * @param req
    */
   @ApiOperation({ summary: 'The database proxy for database management' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post('proxy')
   async proxy(@Param('appid') appid: string, @Req() req: IRequest) {
     const accessor =
@@ -96,20 +89,11 @@ export class DatabaseController {
   }
 
   @ApiOperation({ summary: 'Export database of an application' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get('export')
   async exportDatabase(
     @Param('appid') appid: string,
     @Res({ passthrough: true }) res: IResponse,
-    @InjectUser() user: User,
   ) {
-    // Check if user data import and export is out of limits
-    const databaseSyncLimit = await this.quotaService.databaseSyncLimit(
-      user._id,
-    )
-    if (databaseSyncLimit) {
-      return ResponseUtil.error('Database sync limit exceeded')
-    }
     const tempFilePath = path.join(
       os.tmpdir(),
       'mongodb-data',
@@ -122,7 +106,7 @@ export class DatabaseController {
       mkdirSync(path.dirname(tempFilePath), { recursive: true })
     }
 
-    await this.dbService.exportDatabase(appid, tempFilePath, user._id)
+    await this.dbService.exportDatabase(appid, tempFilePath, DEFAULT_USER_ID)
     const filename = path.basename(tempFilePath)
 
     res.set({
@@ -137,7 +121,6 @@ export class DatabaseController {
   @ApiBody({
     type: ImportDatabaseDto,
   })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Put('import')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -150,15 +133,7 @@ export class DatabaseController {
     @UploadedFile() file: Express.Multer.File,
     @Body('sourceAppid') sourceAppid: string,
     @Param('appid') appid: string,
-    @InjectUser() user: User,
   ) {
-    // Check if user data import and export is out of limits
-    const databaseSyncLimit = await this.quotaService.databaseSyncLimit(
-      user._id,
-    )
-    if (databaseSyncLimit) {
-      return ResponseUtil.error('Database sync limit exceeded')
-    }
     // check if db is valid
     if (!/^[a-z0-9]{6}$/.test(sourceAppid)) {
       return ResponseUtil.error('Invalid source appid')
@@ -186,7 +161,7 @@ export class DatabaseController {
         appid,
         sourceAppid,
         tempFilePath,
-        user._id,
+        DEFAULT_USER_ID,
       )
       return ResponseUtil.ok({})
     } finally {

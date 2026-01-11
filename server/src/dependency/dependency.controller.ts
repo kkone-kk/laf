@@ -8,7 +8,6 @@ import {
   ParseArrayPipe,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common'
 import {
   ApiBearerAuth,
@@ -22,8 +21,6 @@ import { DependencyService } from './dependency.service'
 import { CreateDependencyDto } from './dto/create-dependency.dto'
 import { UpdateDependencyDto } from './dto/update-dependency.dto'
 import { DeleteDependencyDto } from './dto/delete-dependency.dto'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 
 @ApiTags('Application')
 @ApiBearerAuth('Authorization')
@@ -41,7 +38,6 @@ export class DependencyController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Add application dependencies' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post()
   @ApiBody({ type: [CreateDependencyDto] })
   async add(
@@ -61,7 +57,6 @@ export class DependencyController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Update application dependencies' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch()
   @ApiBody({ type: [UpdateDependencyDto] })
   async update(
@@ -80,7 +75,6 @@ export class DependencyController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Get application dependencies' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get()
   async getDependencies(@Param('appid') appid: string) {
     const res = await this.depsService.getMergedObjects(appid)
@@ -95,7 +89,6 @@ export class DependencyController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Remove a dependency' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete()
   @ApiBody({ type: DeleteDependencyDto })
   async remove(

@@ -21,9 +21,6 @@ import { AcceptLanguageResolver, I18nModule, QueryResolver } from 'nestjs-i18n'
 import { MulterModule } from '@nestjs/platform-express'
 import { ServerConfig } from './constants'
 import { EventEmitterModule } from '@nestjs/event-emitter'
-import { Module } from '@nestjs/common'
-import { AppController } from './app.controller'
-import { AppService } from './app.service'
 
 @Module({
   imports: [

@@ -12,15 +12,11 @@ import { ApplicationService } from 'src/application/application.service'
 import { BundleService } from 'src/application/bundle.service'
 import { DatabaseUsageLimitTaskService } from './database-usage-limit-task.service'
 import { DatabaseUsageCaptureTaskService } from './database-usage-capture-task.service'
-import { QuotaService } from 'src/user/quota.service'
 import { SettingService } from 'src/setting/setting.service'
 import { DedicatedDatabaseService } from './dedicated-database/dedicated-database.service'
 import { DedicatedDatabaseTaskService } from './dedicated-database/dedicated-database-task.service'
 import { HttpModule } from '@nestjs/axios'
 import { ApplicationListener } from './listeners/application.listener'
-import { DedicatedDatabaseMonitorService } from './monitor/monitor.service'
-import { DedicatedDatabaseMonitorController } from './monitor/monitor.controller'
-
 @Module({
   imports: [HttpModule],
   controllers: [
@@ -28,7 +24,6 @@ import { DedicatedDatabaseMonitorController } from './monitor/monitor.controller
     PolicyController,
     DatabaseController,
     PolicyRuleController,
-    DedicatedDatabaseMonitorController,
   ],
   providers: [
     CollectionService,
@@ -41,10 +36,8 @@ import { DedicatedDatabaseMonitorController } from './monitor/monitor.controller
     DatabaseUsageCaptureTaskService,
     DatabaseUsageLimitTaskService,
     SettingService,
-    QuotaService,
     DedicatedDatabaseService,
     DedicatedDatabaseTaskService,
-    DedicatedDatabaseMonitorService,
     ApplicationListener,
   ],
   exports: [

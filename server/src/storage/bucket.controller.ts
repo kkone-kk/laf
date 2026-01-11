@@ -6,7 +6,6 @@ import {
   Patch,
   Param,
   Delete,
-  UseGuards,
   Req,
   Logger,
   HttpException,
@@ -24,8 +23,6 @@ import { CreateBucketDto } from './dto/create-bucket.dto'
 import { UpdateBucketDto } from './dto/update-bucket.dto'
 import { BucketService } from './bucket.service'
 import { BundleService } from 'src/application/bundle.service'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 
 @ApiTags('Storage')
 @ApiBearerAuth('Authorization')
@@ -46,15 +43,11 @@ export class BucketController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Create a new bucket' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post()
   async create(
     @Param('appid') appid: string,
     @Body() dto: CreateBucketDto,
-    @Req() req: IRequest,
   ) {
-    const app = req.application
-
     // check bucket count limit
     const bundle = await this.bundleService.findOne(appid)
     const LIMIT_COUNT = bundle?.resource?.limitCountOfBucket || 0
@@ -72,7 +65,7 @@ export class BucketController {
     }
 
     // create bucket
-    const bucket = await this.bucketService.create(app.appid, dto)
+    const bucket = await this.bucketService.create(appid, dto)
     if (!bucket) {
       return ResponseUtil.error('create bucket failed')
     }
@@ -87,7 +80,6 @@ export class BucketController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Get bucket list of an app' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get()
   async findAll(@Param('appid') appid: string) {
     const data = await this.bucketService.findAll(appid)
@@ -102,7 +94,6 @@ export class BucketController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Get a bucket by name' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get(':name')
   async findOne(@Param('appid') appid: string, @Param('name') name: string) {
     const data = await this.bucketService.findOne(appid, name)
@@ -121,7 +112,6 @@ export class BucketController {
    */
   @ApiOperation({ summary: 'Update a bucket' })
   @ApiResponse({ type: ResponseUtil })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':name')
   async update(
     @Param('appid') appid: string,
@@ -147,7 +137,6 @@ export class BucketController {
    * @returns
    */
   @ApiResponse({ type: ResponseUtil })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @ApiOperation({ summary: 'Delete a bucket' })
   @Delete(':name')
   async remove(@Param('appid') appid: string, @Param('name') name: string) {

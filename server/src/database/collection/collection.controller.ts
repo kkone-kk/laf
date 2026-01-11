@@ -7,7 +7,6 @@ import {
   Param,
   Delete,
   Logger,
-  UseGuards,
 } from '@nestjs/common'
 import {
   ApiBearerAuth,
@@ -15,8 +14,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger'
-import { ApplicationAuthGuard } from '../../authentication/application.auth.guard'
-import { JwtAuthGuard } from '../../authentication/jwt.auth.guard'
 import { ApiResponseObject, ResponseUtil } from '../../utils/response'
 import { CollectionService } from './collection.service'
 import { CreateCollectionDto } from '../dto/create-collection.dto'
@@ -38,7 +35,6 @@ export class CollectionController {
    */
   @ApiResponse({ type: ResponseUtil<boolean> })
   @ApiOperation({ summary: 'Create a new collection in database' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post()
   async create(
     @Param('appid') appid: string,
@@ -63,7 +59,6 @@ export class CollectionController {
    */
   @ApiResponseObject(Collection) // QUIRKS: should be array but swagger doesn't support it
   @ApiOperation({ summary: 'Get collection list of an application' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get()
   async findAll(@Param('appid') appid: string) {
     const collections = await this.collectionService.findAll(appid)
@@ -81,7 +76,6 @@ export class CollectionController {
    */
   @ApiResponseObject(Collection)
   @ApiOperation({ summary: 'Get collection by name' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get(':name')
   async findOne(@Param('appid') appid: string, @Param('name') name: string) {
     const res = await this.collectionService.findOne(appid, name)
@@ -100,7 +94,6 @@ export class CollectionController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Update a collection' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':name')
   async update(
     @Param('appid') appid: string,
@@ -123,7 +116,6 @@ export class CollectionController {
    */
   @ApiResponse({ type: ResponseUtil })
   @ApiOperation({ summary: 'Delete a collection by its name' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete(':name')
   async remove(@Param('appid') appid: string, @Param('name') name: string) {
     const res = await this.collectionService.remove(appid, name)
