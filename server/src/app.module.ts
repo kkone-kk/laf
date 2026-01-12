@@ -21,6 +21,7 @@ import { AcceptLanguageResolver, I18nModule, QueryResolver } from 'nestjs-i18n'
 import { MulterModule } from '@nestjs/platform-express'
 import { ServerConfig } from './constants'
 import { EventEmitterModule } from '@nestjs/event-emitter'
+import { MockModule } from './mock/mock.module'
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter'
     RegionModule,
     GatewayModule,
     SettingModule,
+    MockModule,
     I18nModule.forRoot({
       fallbackLanguage: ServerConfig.DEFAULT_LANGUAGE,
       loaderOptions: {
