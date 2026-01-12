@@ -262,3 +262,6 @@ export const HTTP_INTERCEPTOR_TIMEOUT = 3000 // 3s
 
 // KubeBlock v5 upgrade API
 export const KUBEBLOCK_V5_UPGRADE_API_TIMEOUT = 3000 // 3s
+
+import { ObjectId } from 'mongodb'
+export const DEFAULT_USER_ID = new ObjectId('000000000000000000000000')

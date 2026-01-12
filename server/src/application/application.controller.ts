@@ -16,13 +16,11 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger'
-import { JwtAuthGuard } from '../authentication/jwt.auth.guard'
 import {
   ApiResponseArray,
   ApiResponseObject,
   ResponseUtil,
 } from '../utils/response'
-import { ApplicationAuthGuard } from '../authentication/application.auth.guard'
 import {
   UpdateApplicationBundleDto,
   UpdateApplicationNameDto,
@@ -33,7 +31,6 @@ import { FunctionService } from '../function/function.service'
 import { StorageService } from 'src/storage/storage.service'
 import { RegionService } from 'src/region/region.service'
 import { CreateApplicationDto } from './dto/create-application.dto'
-import { AccountService } from 'src/account/account.service'
 import {
   Application,
   ApplicationPhase,
@@ -44,23 +41,18 @@ import { SystemDatabase } from 'src/system-database'
 import { Runtime } from './entities/runtime'
 import { ObjectId } from 'mongodb'
 import { ApplicationBundle } from './entities/application-bundle'
-import { ResourceService } from 'src/billing/resource.service'
 import { RuntimeDomainService } from 'src/gateway/runtime-domain.service'
 import { BindCustomDomainDto } from 'src/website/dto/update-website.dto'
 import { RuntimeDomain } from 'src/gateway/entities/runtime-domain'
-import { GroupRole, getRoleLevel } from 'src/group/entities/group-member'
-import { GroupRoles } from 'src/group/group-role.decorator'
-import { InjectApplication, InjectGroup, InjectUser } from 'src/utils/decorator'
-import { User } from 'src/user/entities/user'
-import { GroupWithRole } from 'src/group/entities/group'
+import { InjectApplication } from 'src/utils/decorator'
 import { isEqual } from 'lodash'
 import { InstanceService } from 'src/instance/instance.service'
-import { QuotaService } from 'src/user/quota.service'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
 import {
   DedicatedDatabasePhase,
   DedicatedDatabaseState,
 } from 'src/database/entities/dedicated-database'
+import { DEFAULT_USER_ID } from 'src/constants'
 
 @ApiTags('Application')
 @Controller('applications')
@@ -74,21 +66,17 @@ export class ApplicationController {
     private readonly fn: FunctionService,
     private readonly region: RegionService,
     private readonly storage: StorageService,
-    private readonly account: AccountService,
-    private readonly resource: ResourceService,
     private readonly runtimeDomain: RuntimeDomainService,
-    private readonly quotaServiceTsService: QuotaService,
     private readonly dedicateDatabase: DedicatedDatabaseService,
   ) {}
 
   /**
    * Create application
    */
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Create application' })
   @ApiResponseObject(ApplicationWithRelations)
   @Post()
-  async create(@Body() dto: CreateApplicationDto, @InjectUser() user: User) {
+  async create(@Body() dto: CreateApplicationDto) {
     const error = dto.validate() || dto.autoscaling.validate()
     if (error) {
       return ResponseUtil.error(error)
@@ -110,19 +98,6 @@ export class ApplicationController {
 
     const regionId = region._id
 
-    // check if trial tier
-    const isTrialTier = await this.resource.isTrialBundle(dto)
-    if (isTrialTier) {
-      const bundle = await this.resource.findTrialBundle(regionId)
-      const trials = await this.application.findTrialApplications(user._id)
-      const limitOfFreeTier = bundle?.limitCountOfFreeTierPerUser || 0
-      if (trials.length >= (limitOfFreeTier || 0)) {
-        return ResponseUtil.error(
-          `you can only create ${limitOfFreeTier} trial applications`,
-        )
-      }
-    }
-
     if (
       dto.dedicatedDatabase &&
       !region.databaseConf.dedicatedDatabase.enabled
@@ -130,31 +105,15 @@ export class ApplicationController {
       return ResponseUtil.error('dedicated database is not enabled')
     }
 
-    // check if a user exceeds the resource limit in a region
-    const limitResource = await this.quotaServiceTsService.resourceLimit(
-      user._id,
-      dto.cpu,
-      dto.memory,
-    )
-    if (limitResource) {
-      return ResponseUtil.error(limitResource)
-    }
-
-    // check account balance
-    const account = await this.account.findOne(user._id)
-    const balance = account?.balance || 0
-    if (!isTrialTier && balance < 0) {
-      return ResponseUtil.error(`account balance is not enough`)
-    }
-
-    const checkSpec = await this.checkResourceSpecification(dto, regionId)
-    if (!checkSpec) {
-      return ResponseUtil.error('invalid resource specification')
-    }
-
     // create application
     const appid = await this.application.tryGenerateUniqueAppid()
-    await this.application.create(regionId, user._id, appid, dto, isTrialTier)
+    await this.application.create(
+      regionId,
+      DEFAULT_USER_ID,
+      appid,
+      dto,
+      false,
+    )
 
     const app = await this.application.findOne(appid)
     return ResponseUtil.ok(app)
@@ -165,12 +124,11 @@ export class ApplicationController {
    * @param req
    * @returns
    */
-  @UseGuards(JwtAuthGuard)
   @Get()
   @ApiOperation({ summary: 'Get user application list' })
   @ApiResponseArray(ApplicationWithRelations)
-  async findAll(@InjectUser() user: User) {
-    const data = await this.application.findAllByUser(user._id)
+  async findAll() {
+    const data = await this.application.findAllByUser(DEFAULT_USER_ID)
     return ResponseUtil.ok(data)
   }
 
@@ -180,7 +138,6 @@ export class ApplicationController {
    * @returns
    */
   @ApiOperation({ summary: 'Get an application by appid' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get(':appid')
   async findOne(@Param('appid') appid: string) {
     const data = await this.application.findOne(appid)
@@ -232,8 +189,6 @@ export class ApplicationController {
    */
   @ApiOperation({ summary: 'Update application name' })
   @ApiResponseObject(Application)
-  @GroupRoles(GroupRole.Admin)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':appid/name')
   async updateName(
     @Param('appid') appid: string,
@@ -248,26 +203,16 @@ export class ApplicationController {
    */
   @ApiOperation({ summary: 'Update application state' })
   @ApiResponseObject(Application)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':appid/state')
   async updateState(
     @Param('appid') appid: string,
     @Body() dto: UpdateApplicationStateDto,
     @InjectApplication() app: Application,
-    @InjectGroup() group: GroupWithRole,
   ) {
     if (dto.state === ApplicationState.Deleted) {
       throw new ForbiddenException('cannot update state to deleted')
     }
     const ddb = await this.dedicateDatabase.findOne(appid)
-    const userid = app.createdBy
-
-    // check account balance
-    const account = await this.account.findOne(userid)
-    const balance = account?.balance || 0
-    if (balance < 0) {
-      return ResponseUtil.error(`account balance is not enough`)
-    }
 
     // check: only running application can restart
     if (
@@ -304,15 +249,6 @@ export class ApplicationController {
       )
     }
 
-    if (
-      [ApplicationState.Stopped, ApplicationState.Running].includes(
-        dto.state,
-      ) &&
-      getRoleLevel(group.role) < getRoleLevel(GroupRole.Admin)
-    ) {
-      return ResponseUtil.error('no permission')
-    }
-
     if (ddb) {
       if (dto.state === ApplicationState.Restarting && dto?.onlyRuntimeFlag) {
         const doc = await this.application.updateState(appid, dto.state)
@@ -336,14 +272,11 @@ export class ApplicationController {
    */
   @ApiOperation({ summary: 'Update application bundle' })
   @ApiResponseObject(ApplicationBundle)
-  @GroupRoles(GroupRole.Admin)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':appid/bundle')
   async updateBundle(
     @Param('appid') appid: string,
     @Body() dto: UpdateApplicationBundleDto,
     @InjectApplication() app: ApplicationWithRelations,
-    @InjectUser() user: User,
   ) {
     // only running application can update bundle
     if (app.phase !== ApplicationPhase.Started) {
@@ -357,24 +290,7 @@ export class ApplicationController {
       return ResponseUtil.error(error)
     }
 
-    const userid = app.createdBy
     const regionId = app.regionId
-
-    // check if trial tier
-    const isTrialTier = await this.resource.isTrialBundle({
-      ...dto,
-      regionId: regionId.toString(),
-    })
-    if (isTrialTier) {
-      const bundle = await this.resource.findTrialBundle(regionId)
-      const trials = await this.application.findTrialApplications(userid)
-      const limitOfFreeTier = bundle?.limitCountOfFreeTierPerUser || 0
-      if (trials.length >= (limitOfFreeTier || 0)) {
-        return ResponseUtil.error(
-          `you can only create ${limitOfFreeTier} trial applications`,
-        )
-      }
-    }
 
     const origin = app.bundle
     if (
@@ -382,11 +298,6 @@ export class ApplicationController {
       (origin.resource.databaseCapacity && dto.dedicatedDatabase?.cpu)
     ) {
       return ResponseUtil.error('cannot change database type')
-    }
-
-    const checkSpec = await this.checkResourceSpecification(dto, regionId, app)
-    if (!checkSpec) {
-      return ResponseUtil.error('invalid resource specification')
     }
 
     // Check if user is trying to change dedicated database resources
@@ -442,18 +353,7 @@ export class ApplicationController {
       )
     }
 
-    // check if a user exceeds the resource limit in a region
-    const limitResource = await this.quotaServiceTsService.resourceLimit(
-      user._id,
-      dto.cpu,
-      dto.memory,
-      appid,
-    )
-    if (limitResource) {
-      return ResponseUtil.error(limitResource)
-    }
-
-    const doc = await this.application.updateBundle(appid, dto, isTrialTier)
+    const doc = await this.application.updateBundle(appid, dto, false)
 
     // restart running application if cpu or memory changed
     const isCpuChanged = origin.resource.limitCPU !== doc.resource.limitCPU
@@ -510,8 +410,6 @@ export class ApplicationController {
    */
   @ApiResponseObject(RuntimeDomain)
   @ApiOperation({ summary: 'Bind custom domain to application' })
-  @GroupRoles(GroupRole.Admin)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Patch(':appid/domain')
   async bindDomain(
     @Param('appid') appid: string,
@@ -545,8 +443,6 @@ export class ApplicationController {
    */
   @ApiResponse({ type: ResponseUtil<boolean> })
   @ApiOperation({ summary: 'Check if domain is resolved' })
-  @GroupRoles(GroupRole.Admin)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post(':appid/domain/resolved')
   async checkResolved(
     @Param('appid') appid: string,
@@ -565,8 +461,6 @@ export class ApplicationController {
    */
   @ApiResponseObject(RuntimeDomain)
   @ApiOperation({ summary: 'Remove custom domain of application' })
-  @GroupRoles(GroupRole.Admin)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete(':appid/domain')
   async remove(@Param('appid') appid: string) {
     const runtimeDomain = await this.runtimeDomain.findOne(appid)
@@ -587,8 +481,6 @@ export class ApplicationController {
    */
   @ApiOperation({ summary: 'Delete an application' })
   @ApiResponseObject(Application)
-  @GroupRoles(GroupRole.Owner)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete(':appid')
   async delete(
     @Param('appid') appid: string,
@@ -606,130 +498,4 @@ export class ApplicationController {
     return ResponseUtil.ok(doc)
   }
 
-  private async checkResourceSpecification(
-    dto: UpdateApplicationBundleDto,
-    regionId: ObjectId,
-    app?: ApplicationWithRelations,
-  ) {
-    const resourceOptions = await this.resource.findAllByRegionId(regionId)
-
-    if (app) {
-      const checkSpec = resourceOptions.every((option) => {
-        switch (option.type) {
-          case 'cpu':
-            return (
-              option.specs.some((spec) => spec.value === dto.cpu) ||
-              app.bundle.resource.limitCPU === dto.cpu
-            )
-          case 'memory':
-            return (
-              option.specs.some((spec) => spec.value === dto.memory) ||
-              app.bundle.resource.limitMemory === dto.memory
-            )
-          case 'databaseCapacity':
-            if (!dto.databaseCapacity) return true
-            return (
-              option.specs.some(
-                (spec) => spec.value === dto.databaseCapacity,
-              ) || app.bundle.resource.databaseCapacity === dto.databaseCapacity
-            )
-          case 'storageCapacity':
-            if (!dto.storageCapacity) return true
-            return (
-              option.specs.some((spec) => spec.value === dto.storageCapacity) ||
-              app.bundle.resource.storageCapacity === dto.storageCapacity
-            )
-          // dedicated database
-          case 'dedicatedDatabaseCPU':
-            return (
-              !dto.dedicatedDatabase?.cpu ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.cpu,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.limitCPU ===
-                dto.dedicatedDatabase.cpu
-            )
-          case 'dedicatedDatabaseMemory':
-            return (
-              !dto.dedicatedDatabase?.memory ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.memory,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.limitMemory ===
-                dto.dedicatedDatabase.memory
-            )
-          case 'dedicatedDatabaseCapacity':
-            return (
-              !dto.dedicatedDatabase?.capacity ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.capacity,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.capacity ===
-                dto.dedicatedDatabase.capacity
-            )
-          case 'dedicatedDatabaseReplicas':
-            return (
-              !dto.dedicatedDatabase?.replicas ||
-              option.specs.some(
-                (spec) => spec.value === dto.dedicatedDatabase.replicas,
-              ) ||
-              app.bundle.resource.dedicatedDatabase?.replicas ===
-                dto.dedicatedDatabase.replicas
-            )
-          default:
-            return true
-        }
-      })
-      return checkSpec
-    }
-
-    const checkSpec = resourceOptions.every((option) => {
-      switch (option.type) {
-        case 'cpu':
-          return option.specs.some((spec) => spec.value === dto.cpu)
-        case 'memory':
-          return option.specs.some((spec) => spec.value === dto.memory)
-        case 'databaseCapacity':
-          if (!dto.databaseCapacity) return true
-          return option.specs.some(
-            (spec) => spec.value === dto.databaseCapacity,
-          )
-        case 'storageCapacity':
-          return option.specs.some((spec) => spec.value === dto.storageCapacity)
-        // dedicated database
-        case 'dedicatedDatabaseCPU':
-          return (
-            !dto.dedicatedDatabase?.cpu ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.cpu,
-            )
-          )
-        case 'dedicatedDatabaseMemory':
-          return (
-            !dto.dedicatedDatabase?.memory ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.memory,
-            )
-          )
-        case 'dedicatedDatabaseCapacity':
-          return (
-            !dto.dedicatedDatabase?.capacity ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.capacity,
-            )
-          )
-        case 'dedicatedDatabaseReplicas':
-          return (
-            !dto.dedicatedDatabase?.replicas ||
-            option.specs.some(
-              (spec) => spec.value === dto.dedicatedDatabase.replicas,
-            )
-          )
-        default:
-          return true
-      }
-    })
-
-    return checkSpec
-  }
 }

@@ -6,7 +6,6 @@ import {
   Patch,
   Param,
   Delete,
-  UseGuards,
 } from '@nestjs/common'
 import { PolicyService } from './policy.service'
 import { CreatePolicyDto } from '../dto/create-policy.dto'
@@ -23,8 +22,6 @@ import {
   DatabasePolicy,
   DatabasePolicyWithRules,
 } from '../entities/database-policy'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 
 @ApiTags('Database')
 @ApiBearerAuth('Authorization')
@@ -38,7 +35,6 @@ export class PolicyController {
   @Post()
   @ApiOperation({ summary: 'Create database policy' })
   @ApiResponseObject(DatabasePolicyWithRules)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   async create(@Param('appid') appid: string, @Body() dto: CreatePolicyDto) {
     // check policy count limit
     const bundle = await this.bundleService.findOne(appid)
@@ -60,7 +56,6 @@ export class PolicyController {
   @Get()
   @ApiOperation({ summary: 'Get database policy list' })
   @ApiResponseArray(DatabasePolicyWithRules)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   async findAll(@Param('appid') appid: string) {
     const docs = await this.policiesService.findAll(appid)
     return ResponseUtil.ok(docs)
@@ -69,7 +64,6 @@ export class PolicyController {
   @Patch(':name')
   @ApiOperation({ summary: 'Update database policy' })
   @ApiResponseObject(DatabasePolicy)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   async update(
     @Param('appid') appid: string,
     @Param('name') name: string,
@@ -87,7 +81,6 @@ export class PolicyController {
   @Delete(':name')
   @ApiOperation({ summary: 'Remove a database policy' })
   @ApiResponseString()
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   async remove(@Param('appid') appid: string, @Param('name') name: string) {
     // check policy exists
     const existed = await this.policiesService.findOne(appid, name)

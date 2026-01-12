@@ -4,7 +4,6 @@ import {
   Logger,
   Param,
   Query,
-  UseGuards,
   Sse,
   MessageEvent,
 } from '@nestjs/common'
@@ -13,8 +12,6 @@ import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
 import { FunctionService } from '../function/function.service'
 import { ApiResponsePagination, ResponseUtil } from '../utils/response'
 import { FunctionLog } from './entities/function-log'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 import { PassThrough } from 'nodemailer/lib/xoauth2'
 import { Log } from '@kubernetes/client-node'
 import { GetApplicationNamespace } from 'src/utils/getter'
@@ -44,7 +41,6 @@ export class LogController {
   @ApiTags('Function')
   @ApiOperation({ summary: 'Get function logs' })
   @ApiResponsePagination(FunctionLog)
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @ApiQuery({
     name: 'functionName',
     type: String,
@@ -98,7 +94,6 @@ export class LogController {
 
   @ApiTags('Application')
   @ApiOperation({ summary: 'Get app pod logs' })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Sse(':podName')
   async streamLogs(
     @Param('podName') podName: string,

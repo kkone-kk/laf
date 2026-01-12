@@ -11,7 +11,6 @@ import { FunctionService } from 'src/function/function.service'
 import { DatabaseService } from 'src/database/database.service'
 import { MongoService } from 'src/database/mongo.service'
 import { BundleService } from 'src/application/bundle.service'
-import { FunctionRecycleBinService } from 'src/recycle-bin/cloud-function/function-recycle-bin.service'
 import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
 
 @Module({
@@ -21,7 +20,6 @@ import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedica
     TriggerService,
     JwtService,
     ApplicationService,
-    FunctionRecycleBinService,
     CronJobService,
     TriggerTaskService,
     FunctionService,

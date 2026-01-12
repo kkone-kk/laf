@@ -19,7 +19,6 @@ import { CloudFunctionHistory } from './entities/cloud-function-history'
 import { TriggerService } from 'src/trigger/trigger.service'
 import { TriggerPhase } from 'src/trigger/entities/cron-trigger'
 import { UpdateFunctionDebugDto } from './dto/update-function-debug.dto'
-import { FunctionRecycleBinService } from 'src/recycle-bin/cloud-function/function-recycle-bin.service'
 import { HttpService } from '@nestjs/axios'
 import { RegionService } from 'src/region/region.service'
 import { GetApplicationNamespace } from 'src/utils/getter'
@@ -36,7 +35,6 @@ export class FunctionService {
     private readonly dedicatedDatabaseService: DedicatedDatabaseService,
     private readonly jwtService: JwtService,
     private readonly triggerService: TriggerService,
-    private readonly functionRecycleBinService: FunctionRecycleBinService,
     private readonly httpService: HttpService,
     private readonly regionService: RegionService,
   ) {}
@@ -209,9 +207,6 @@ export class FunctionService {
         .findOneAndDelete({ appid, name }, { session })
 
       await this.deleteHistory(res.value, session)
-
-      // add this function to recycle bin
-      await this.functionRecycleBinService.addToRecycleBin(res.value, session)
 
       await this.unpublish(appid, name)
 

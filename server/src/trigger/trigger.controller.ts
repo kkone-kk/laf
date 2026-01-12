@@ -5,7 +5,6 @@ import {
   Body,
   Param,
   Delete,
-  UseGuards,
   Logger,
 } from '@nestjs/common'
 import { TriggerService } from './trigger.service'
@@ -19,8 +18,6 @@ import {
 } from '@nestjs/swagger'
 import { BundleService } from 'src/application/bundle.service'
 import { ObjectId } from 'mongodb'
-import { JwtAuthGuard } from 'src/authentication/jwt.auth.guard'
-import { ApplicationAuthGuard } from 'src/authentication/application.auth.guard'
 import { FunctionService } from 'src/function/function.service'
 
 @ApiTags('Trigger')
@@ -42,7 +39,6 @@ export class TriggerController {
    */
   @ApiOperation({ summary: 'Create a cron trigger' })
   @ApiResponse({ type: ResponseUtil })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Post()
   async create(@Param('appid') appid: string, @Body() dto: CreateTriggerDto) {
     // check trigger count limit
@@ -76,7 +72,6 @@ export class TriggerController {
    */
   @ApiOperation({ summary: 'Get trigger list of an application' })
   @ApiResponse({ type: ResponseUtil })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Get()
   async findAll(@Param('appid') appid: string) {
     const res = await this.triggerService.findAll(appid)
@@ -92,7 +87,6 @@ export class TriggerController {
    */
   @ApiOperation({ summary: 'Remove a cron trigger' })
   @ApiResponse({ type: ResponseUtil })
-  @UseGuards(JwtAuthGuard, ApplicationAuthGuard)
   @Delete(':id')
   async remove(@Param('id') id: string, @Param('appid') appid: string) {
     // check if trigger exists
