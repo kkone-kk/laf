@@ -22,6 +22,8 @@ import { QuotaService } from 'src/user/quota.service'
 import { SettingService } from 'src/setting/setting.service'
 import { PodService } from './pod.service'
 import { PodController } from './pod.controller'
+import { LocalClusterModule } from 'src/local-cluster/local-cluster.module'
+import { DedicatedDatabaseService } from 'src/database/dedicated-database/dedicated-database.service'
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { PodController } from './pod.controller'
     GatewayModule,
     AccountModule,
     HttpModule,
+    LocalClusterModule,
   ],
   controllers: [
     ApplicationController,
@@ -52,6 +55,7 @@ import { PodController } from './pod.controller'
     QuotaService,
     SettingService,
     PodService,
+    DedicatedDatabaseService,
   ],
   exports: [
     ApplicationService,

@@ -8,7 +8,6 @@ import * as assert from 'assert'
 import { ApplicationBilling } from './entities/application-billing'
 import { CalculatePriceDto } from './dto/calculate-price.dto'
 import { BillingQuery } from './interface/billing-query.interface'
-import { PrometheusDriver } from 'prometheus-query'
 import {
   Application,
   ApplicationState,
@@ -297,32 +296,11 @@ export class BillingService {
   }
 
   async getMeteringData(app: Application, startAt: Date, endAt: Date) {
-    const region = await this.region.findOne(app.regionId)
-
-    const prom = new PrometheusDriver({
-      endpoint: region.prometheusConf.apiUrl,
-    })
-
-    const cpuTask = prom
-      .instantQuery(`laf:billing:cpu{appid="${app.appid}"}`, endAt)
-      .then((res) => res.result[0])
-      .then((res) => Number(res.value.value))
-
-    const memoryTask = prom
-      .instantQuery(`laf:billing:memory{appid="${app.appid}"}`, endAt)
-      .then((res) => res.result[0])
-      .then((res) => Number(res.value.value))
-
-    const [cpu, memory] = await Promise.all([cpuTask, memoryTask]).catch(() => {
-      return [0, 0]
-    })
-
-    const networkTraffic = await this.getAppTrafficUsage(app, startAt, endAt)
-
+    // Mock metering for local environment
     return {
-      cpu,
-      memory,
-      networkTraffic,
+      cpu: 0,
+      memory: 0,
+      networkTraffic: 0,
     }
   }
 

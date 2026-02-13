@@ -33,6 +33,7 @@ import { MonitorModule } from './monitor/monitor.module'
 import { NotificationModule } from './notification/notification.module'
 import { ServerConfig } from './constants'
 import { EventEmitterModule } from '@nestjs/event-emitter'
+import { LocalClusterModule } from './local-cluster/local-cluster.module'
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter'
     MonitorModule,
     NotificationModule,
     EventEmitterModule.forRoot(),
+    LocalClusterModule,
   ],
   controllers: [AppController],
   providers: [
